@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Blackish (Dark) Theme -->
+    <SolidColorBrush x:Key="FrameBg" Color="#1A1A1A"/>
+    <SolidColorBrush x:Key="FrameBorder" Color="#000000"/>
+    <SolidColorBrush x:Key="CalendarBg" Color="#2D2D2D"/>
+    <SolidColorBrush x:Key="CalendarHeaderBg" Color="#3D3D3D"/>
+    <SolidColorBrush x:Key="TaskListBg" Color="#424242"/>
+    <SolidColorBrush x:Key="TaskHeaderBg" Color="#505050"/>
+    <SolidColorBrush x:Key="TaskRowBg" Color="#5A5A5A"/>
+    <SolidColorBrush x:Key="TaskRowCompletedBg" Color="#2E7D32"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#BDBDBD"/>
+    <SolidColorBrush x:Key="TextLight" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextHeader" Color="#E0E0E0"/>
+
+    <!-- Calendar Text Colors for Dark Theme -->
+    <SolidColorBrush x:Key="CalendarText" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="MaterialDesignBody" Color="#E0E0E0"/>
+    <SolidColorBrush x:Key="MaterialDesignBodyLight" Color="#BDBDBD"/>
+    <SolidColorBrush x:Key="InputBg" Color="#3D3D3D"/>
+    <SolidColorBrush x:Key="InputBorder" Color="#757575"/>
+</ResourceDictionary>

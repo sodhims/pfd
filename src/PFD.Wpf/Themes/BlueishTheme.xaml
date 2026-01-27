@@ -1,0 +1,18 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Blueish Theme -->
+    <SolidColorBrush x:Key="FrameBg" Color="#1565C0"/>
+    <SolidColorBrush x:Key="FrameBorder" Color="#0D47A1"/>
+    <SolidColorBrush x:Key="CalendarBg" Color="#42A5F5"/>
+    <SolidColorBrush x:Key="CalendarHeaderBg" Color="#1E88E5"/>
+    <SolidColorBrush x:Key="TaskListBg" Color="#BBDEFB"/>
+    <SolidColorBrush x:Key="TaskHeaderBg" Color="#2196F3"/>
+    <SolidColorBrush x:Key="TaskRowBg" Color="#E3F2FD"/>
+    <SolidColorBrush x:Key="TaskRowCompletedBg" Color="#C8E6C9"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#0D47A1"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#1565C0"/>
+    <SolidColorBrush x:Key="TextLight" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextHeader" Color="#0D47A1"/>
+    <SolidColorBrush x:Key="InputBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputBorder" Color="#1565C0"/>
+</ResourceDictionary>

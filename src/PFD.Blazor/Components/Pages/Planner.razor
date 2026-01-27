@@ -1,0 +1,726 @@
+@page "/"
+@page "/planner"
+@using PFD.Shared.Interfaces
+@using PFD.Shared.Models
+@inject ITaskService TaskService
+@inject IAnalysisService AnalysisService
+@rendermode InteractiveServer
+
+<PageTitle>PFD - Personal Daily Planner</PageTitle>
+
+<div class="planner-container theme-@CurrentTheme">
+    <!-- Left Panel: Calendar + Settings -->
+    <div class="left-panel">
+        <!-- Calendar -->
+        <div class="calendar-section">
+            <div class="calendar-header">
+                <button class="nav-btn" @onclick="PreviousMonth">&lt;</button>
+                <span class="month-year">@CurrentMonth.ToString("MMMM yyyy")</span>
+                <button class="nav-btn" @onclick="NextMonth">&gt;</button>
+            </div>
+            <div class="calendar-weekdays">
+                <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+            </div>
+            <div class="calendar-days">
+                @foreach (var day in CalendarDays)
+                {
+                    <button class="calendar-day @(day.IsCurrentMonth ? "" : "other-month") @(day.Date.Date == SelectedDate.Date ? "selected" : "") @(day.Date.Date == DateTime.Today ? "today" : "")"
+                            @onclick="() => SelectDate(day.Date)">
+                        @day.Date.Day
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="settings-section">
+            <div class="setting-group">
+                <label>View</label>
+                <div class="view-toggle">
+                    <button class="@(IsDailyView ? "active" : "")" @onclick="() => SetView(true)">Daily</button>
+                    <button class="@(!IsDailyView ? "active" : "")" @onclick="() => SetView(false)">Weekly</button>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label>Theme</label>
+                <select @onchange="ChangeTheme" value="@CurrentTheme">
+                    <option value="teal">Teal</option>
+                    <option value="red">Red</option>
+                    <option value="orange">Orange</option>
+                    <option value="yellow">Yellow</option>
+                    <option value="blue">Blue</option>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="preppy">Preppy</option>
+                </select>
+            </div>
+            <div class="setting-group">
+                <label>AI Assistant</label>
+                <button class="ai-toggle-btn" @onclick="ToggleAiPanel">
+                    <span class="ai-icon">&#129302;</span>
+                    @(ShowAiPanel ? "Hide Insights" : "Show Insights")
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Tasks -->
+    <div class="right-panel">
+        <!-- Header -->
+        <div class="task-header">
+            <span class="header-icon">&#128197;</span>
+            <span class="header-text">@GetHeaderText()</span>
+        </div>
+
+        <!-- Add Task -->
+        <div class="add-task">
+            <input type="text" @bind="NewTaskText" @bind:event="oninput"
+                   @onkeydown="HandleKeyDown" placeholder="Enter a new task..." />
+            <input type="text" @bind="NewTaskTimeText" @bind:event="oninput" class="time-input"
+                   placeholder="HH:mm" title="Schedule time (optional, e.g. 09:00)" />
+            <button @onclick="AddTask">Add</button>
+        </div>
+
+        <!-- Overdue Section -->
+        @if (OverdueTasks.Any() && IsDailyView)
+        {
+            <div class="overdue-section">
+                <div class="overdue-header">
+                    <span class="overdue-icon">&#9888;</span>
+                    <span>Overdue (@OverdueTasks.Count)</span>
+                </div>
+                @foreach (var task in OverdueTasks)
+                {
+                    <div class="task-row overdue">
+                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
+                        <span class="task-title">@task.Title</span>
+                        <span class="task-date overdue-date">@task.TaskDate.ToString("M/d")</span>
+                        <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
+                        <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Task List -->
+        <div class="task-list">
+            @if (IsDailyView)
+            {
+                @if (ScheduledTasks.Any())
+                {
+                    <div class="scheduled-section">
+                        <div class="section-header">
+                            <span class="section-icon">&#128337;</span>
+                            <span>Scheduled</span>
+                        </div>
+                        @foreach (var task in ScheduledTasks)
+                        {
+                            <div class="task-row scheduled @(task.IsCompleted ? "completed" : "")">
+                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                                <span class="task-time" @onclick="() => OpenTimeEditor(task)">
+                                    @FormatTime(task.ScheduledTime)
+                                </span>
+                                @if (EditingTaskId == task.Id)
+                                {
+                                    <input type="text" class="task-edit" @bind="EditingTaskText"
+                                           @onblur="SaveTaskEdit" @onkeydown="HandleEditKeyDown" />
+                                }
+                                else
+                                {
+                                    <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
+                                          @ondblclick="() => StartEditTask(task)">@task.Title</span>
+                                }
+                                @if (task.DurationMinutes != 30)
+                                {
+                                    <span class="task-duration">@task.DurationMinutes min</span>
+                                }
+                                <button class="clear-time-btn" title="Remove time" @onclick="() => ClearTaskTime(task)">&#10006;</button>
+                                <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (AllDayTasks.Any())
+                {
+                    <div class="allday-section">
+                        <div class="section-header">
+                            <span class="section-icon">&#128203;</span>
+                            <span>Tasks</span>
+                        </div>
+                        @foreach (var task in AllDayTasks)
+                        {
+                            <div class="task-row @(task.IsCompleted ? "completed" : "")">
+                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                                @if (EditingTaskId == task.Id)
+                                {
+                                    <input type="text" class="task-edit" @bind="EditingTaskText"
+                                           @onblur="SaveTaskEdit" @onkeydown="HandleEditKeyDown" />
+                                }
+                                else
+                                {
+                                    <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
+                                          @ondblclick="() => StartEditTask(task)">@task.Title</span>
+                                }
+                                <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">&#128337;</button>
+                                <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                @foreach (var task in WeeklyTasks)
+                {
+                    <div class="task-row @(task.IsCompleted ? "completed" : "")">
+                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" />
+                        @if (EditingTaskId == task.Id)
+                        {
+                            <input type="text" class="task-edit" @bind="EditingTaskText"
+                                   @onblur="SaveWeeklyTaskEdit" @onkeydown="HandleWeeklyEditKeyDown" />
+                        }
+                        else
+                        {
+                            <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
+                                  @ondblclick="() => StartEditWeeklyTask(task)">@task.Title</span>
+                        }
+                        <span class="task-date">@task.TaskDate.ToString("ddd M/d")</span>
+                        <div class="day-indicators">
+                            <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Monday ? "active" : "")">M</span>
+                            <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Tuesday ? "active" : "")">T</span>
+                            <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Wednesday ? "active" : "")">W</span>
+                            <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Thursday ? "active" : "")">T</span>
+                            <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Friday ? "active" : "")">F</span>
+                        </div>
+                        <button class="delete-btn" @onclick="() => DeleteWeeklyTask(task)">&#128465;</button>
+                    </div>
+                }
+            }
+
+            @if ((IsDailyView && !Tasks.Any()) || (!IsDailyView && !WeeklyTasks.Any()))
+            {
+                <div class="no-tasks">No tasks for this @(IsDailyView ? "day" : "week"). Add one above!</div>
+            }
+        </div>
+    </div>
+
+    <!-- Time Editor Modal -->
+    @if (EditingTimeTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseTimeEditor">
+            <div class="time-editor-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>Schedule Task</span>
+                    <button class="close-btn" @onclick="CloseTimeEditor">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-task-title">@EditingTimeTask.Title</div>
+                    <div class="time-picker-row">
+                        <label>Time:</label>
+                        <input type="text" @bind="EditingTimeValue" placeholder="HH:mm (e.g. 09:00)" />
+                    </div>
+                    <div class="duration-row">
+                        <label>Duration:</label>
+                        <select @bind="EditingDuration">
+                            <option value="15">15 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="45">45 minutes</option>
+                            <option value="60">1 hour</option>
+                            <option value="90">1.5 hours</option>
+                            <option value="120">2 hours</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseTimeEditor">Cancel</button>
+                    <button class="save-btn" @onclick="SaveTaskTime">Save</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- AI Insights Panel -->
+    @if (ShowAiPanel)
+    {
+        <div class="ai-panel">
+            <div class="ai-header">
+                <span class="ai-icon">&#129302;</span>
+                <span>AI Insights</span>
+                <button class="refresh-btn" @onclick="RefreshAiInsights" title="Refresh">&#8635;</button>
+            </div>
+
+            @if (IsAiLoading)
+            {
+                <div class="ai-loading">
+                    <span>&#8987;</span> Analyzing...
+                </div>
+            }
+            else
+            {
+                <!-- Summary -->
+                <div class="ai-section">
+                    <div class="ai-section-title">Productivity Summary</div>
+                    <p class="ai-summary">@AiSummary</p>
+                </div>
+
+                <!-- Suggestions -->
+                @if (AiSuggestions.Any())
+                {
+                    <div class="ai-section">
+                        <div class="ai-section-title">Suggestions</div>
+                        @foreach (var suggestion in AiSuggestions)
+                        {
+                            <div class="ai-suggestion">
+                                <span class="suggestion-icon">&#128161;</span>
+                                <span>@suggestion</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Priority Tasks -->
+                @if (PrioritizedTasks.Any())
+                {
+                    <div class="ai-section">
+                        <div class="ai-section-title">Priority Tasks</div>
+                        @foreach (var pt in PrioritizedTasks.Take(5))
+                        {
+                            <div class="priority-task">
+                                <span class="priority-badge priority-@GetPriorityClass(pt.PriorityScore)">@GetPriorityLabel(pt.PriorityScore)</span>
+                                <div class="priority-content">
+                                    <div class="priority-title">@pt.Task.Title</div>
+                                    <div class="priority-reason">@pt.Reasoning</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private DateTime _selectedDate = DateTime.Today;
+    private DateTime SelectedDate
+    {
+        get => _selectedDate;
+        set
+        {
+            _selectedDate = value;
+            _ = LoadTasksAsync();
+        }
+    }
+
+    private DateTime CurrentMonth { get; set; } = DateTime.Today;
+    private bool IsDailyView { get; set; } = true;
+    private string CurrentTheme { get; set; } = "teal";
+    private string NewTaskText { get; set; } = "";
+    private string NewTaskTimeText { get; set; } = "";
+    private List<DailyTask> Tasks { get; set; } = new();
+    private List<DailyTask> WeeklyTasks { get; set; } = new();
+    private List<DailyTask> OverdueTasks { get; set; } = new();
+    private List<CalendarDay> CalendarDays { get; set; } = new();
+
+    // Computed lists for scheduled/all-day display
+    private List<DailyTask> ScheduledTasks => Tasks.Where(t => !t.IsAllDay && t.ScheduledTime.HasValue).ToList();
+    private List<DailyTask> AllDayTasks => Tasks.Where(t => t.IsAllDay || !t.ScheduledTime.HasValue).ToList();
+
+    private int? EditingTaskId { get; set; }
+    private string EditingTaskText { get; set; } = "";
+    private DailyTask? EditingTask { get; set; }
+
+    // Time editor
+    private DailyTask? EditingTimeTask { get; set; }
+    private string EditingTimeValue { get; set; } = "09:00";
+    private int EditingDuration { get; set; } = 30;
+
+    // AI properties
+    private bool ShowAiPanel { get; set; } = false;
+    private bool IsAiLoading { get; set; } = false;
+    private string AiSummary { get; set; } = "";
+    private List<string> AiSuggestions { get; set; } = new();
+    private List<PrioritizedTask> PrioritizedTasks { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        BuildCalendar();
+        await LoadTasksAsync();
+    }
+
+    private void BuildCalendar()
+    {
+        CalendarDays.Clear();
+        var firstOfMonth = new DateTime(CurrentMonth.Year, CurrentMonth.Month, 1);
+        var lastOfMonth = firstOfMonth.AddMonths(1).AddDays(-1);
+        int startDayOfWeek = (int)firstOfMonth.DayOfWeek;
+
+        // Previous month days
+        var prevMonth = firstOfMonth.AddDays(-startDayOfWeek);
+        for (int i = 0; i < startDayOfWeek; i++)
+        {
+            CalendarDays.Add(new CalendarDay { Date = prevMonth.AddDays(i), IsCurrentMonth = false });
+        }
+
+        // Current month days
+        for (int day = 1; day <= lastOfMonth.Day; day++)
+        {
+            CalendarDays.Add(new CalendarDay { Date = new DateTime(CurrentMonth.Year, CurrentMonth.Month, day), IsCurrentMonth = true });
+        }
+
+        // Next month days
+        int remainingDays = 42 - CalendarDays.Count;
+        var nextMonth = lastOfMonth.AddDays(1);
+        for (int i = 0; i < remainingDays; i++)
+        {
+            CalendarDays.Add(new CalendarDay { Date = nextMonth.AddDays(i), IsCurrentMonth = false });
+        }
+    }
+
+    private async Task LoadTasksAsync()
+    {
+        // Load overdue tasks (only for today's view)
+        if (SelectedDate.Date == DateTime.Today)
+        {
+            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today);
+        }
+        else
+        {
+            OverdueTasks.Clear();
+        }
+
+        if (IsDailyView)
+        {
+            Tasks = await TaskService.GetTasksForDateAsync(SelectedDate);
+            WeeklyTasks.Clear();
+        }
+        else
+        {
+            var dayOfWeek = (int)SelectedDate.DayOfWeek;
+            var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+            var startOfWeek = SelectedDate.AddDays(-daysToMonday);
+            WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4));
+            Tasks.Clear();
+        }
+        StateHasChanged();
+    }
+
+    private void SelectDate(DateTime date)
+    {
+        SelectedDate = date;
+        if (date.Month != CurrentMonth.Month || date.Year != CurrentMonth.Year)
+        {
+            CurrentMonth = new DateTime(date.Year, date.Month, 1);
+            BuildCalendar();
+        }
+    }
+
+    private void PreviousMonth()
+    {
+        CurrentMonth = CurrentMonth.AddMonths(-1);
+        BuildCalendar();
+    }
+
+    private void NextMonth()
+    {
+        CurrentMonth = CurrentMonth.AddMonths(1);
+        BuildCalendar();
+    }
+
+    private void SetView(bool daily)
+    {
+        IsDailyView = daily;
+        _ = LoadTasksAsync();
+    }
+
+    private string GetHeaderText()
+    {
+        if (IsDailyView)
+        {
+            return SelectedDate.Date == DateTime.Today
+                ? $"TODAY - {SelectedDate:dddd, MMMM d, yyyy}"
+                : SelectedDate.ToString("dddd, MMMM d, yyyy");
+        }
+        else
+        {
+            var dayOfWeek = (int)SelectedDate.DayOfWeek;
+            var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+            var startOfWeek = SelectedDate.AddDays(-daysToMonday);
+            var endOfWeek = startOfWeek.AddDays(4);
+            return $"WEEK: {startOfWeek:MMM d} - {endOfWeek:MMM d, yyyy}";
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddTask();
+        }
+    }
+
+    private async Task AddTask()
+    {
+        if (string.IsNullOrWhiteSpace(NewTaskText)) return;
+
+        var task = new DailyTask
+        {
+            Title = NewTaskText,
+            TaskDate = SelectedDate,
+            IsCompleted = false,
+            SortOrder = Tasks.Count,
+            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText)
+        };
+
+        // Parse scheduled time if provided
+        if (!string.IsNullOrWhiteSpace(NewTaskTimeText) && TimeSpan.TryParse(NewTaskTimeText, out var time))
+        {
+            task.ScheduledTime = time;
+            task.IsAllDay = false;
+        }
+
+        await TaskService.CreateTaskAsync(task);
+        NewTaskText = "";
+        NewTaskTimeText = "";
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleTask(DailyTask task)
+    {
+        await TaskService.ToggleCompletionAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task DeleteTask(DailyTask task)
+    {
+        await TaskService.DeleteTaskAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleWeeklyTask(DailyTask task)
+    {
+        await TaskService.ToggleCompletionAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task DeleteWeeklyTask(DailyTask task)
+    {
+        await TaskService.DeleteTaskAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleOverdueTask(DailyTask task)
+    {
+        await TaskService.ToggleCompletionAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task DeleteOverdueTask(DailyTask task)
+    {
+        await TaskService.DeleteTaskAsync(task.Id);
+        await LoadTasksAsync();
+    }
+
+    private async Task MoveToToday(DailyTask task)
+    {
+        await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today);
+        await LoadTasksAsync();
+    }
+
+    private void StartEditTask(DailyTask task)
+    {
+        EditingTaskId = task.Id;
+        EditingTaskText = task.Title;
+        EditingTask = task;
+    }
+
+    private void StartEditWeeklyTask(DailyTask task)
+    {
+        EditingTaskId = task.Id;
+        EditingTaskText = task.Title;
+        EditingTask = task;
+    }
+
+    private async Task SaveTaskEdit()
+    {
+        if (EditingTask != null && !string.IsNullOrWhiteSpace(EditingTaskText))
+        {
+            EditingTask.Title = EditingTaskText;
+            await TaskService.UpdateTaskAsync(EditingTask);
+            await LoadTasksAsync();
+        }
+        EditingTaskId = null;
+        EditingTask = null;
+    }
+
+    private async Task SaveWeeklyTaskEdit()
+    {
+        await SaveTaskEdit();
+    }
+
+    private async Task HandleEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SaveTaskEdit();
+        }
+        else if (e.Key == "Escape")
+        {
+            EditingTaskId = null;
+            EditingTask = null;
+        }
+    }
+
+    private async Task HandleWeeklyEditKeyDown(KeyboardEventArgs e)
+    {
+        await HandleEditKeyDown(e);
+    }
+
+    private void ChangeTheme(ChangeEventArgs e)
+    {
+        CurrentTheme = e.Value?.ToString() ?? "teal";
+    }
+
+    private void ToggleAiPanel()
+    {
+        ShowAiPanel = !ShowAiPanel;
+        if (ShowAiPanel)
+        {
+            _ = LoadAiInsightsAsync();
+        }
+    }
+
+    private async Task RefreshAiInsights()
+    {
+        await LoadAiInsightsAsync();
+    }
+
+    private async Task LoadAiInsightsAsync()
+    {
+        if (!await AnalysisService.IsAvailableAsync())
+        {
+            AiSummary = "AI service unavailable. Start Ollama to enable AI features.";
+            StateHasChanged();
+            return;
+        }
+
+        IsAiLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var recentTasks = await TaskService.GetRecentTasksAsync(30);
+            var overdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today);
+            var todayTasks = Tasks.ToList();
+
+            // Get insights
+            var insights = await AnalysisService.GetInsightsAsync(recentTasks);
+            AiSummary = insights.ProductivitySummary;
+            AiSuggestions = insights.Suggestions;
+
+            // Get prioritization
+            if (todayTasks.Any() || overdueTasks.Any())
+            {
+                var prioritization = await AnalysisService.GetPrioritizedTasksAsync(todayTasks, overdueTasks);
+
+                PrioritizedTasks.Clear();
+                foreach (var taskId in prioritization.PriorityOrder)
+                {
+                    var task = todayTasks.FirstOrDefault(t => t.Id == taskId)
+                            ?? overdueTasks.FirstOrDefault(t => t.Id == taskId);
+                    if (task != null)
+                    {
+                        PrioritizedTasks.Add(new PrioritizedTask
+                        {
+                            Task = task,
+                            PriorityScore = prioritization.PriorityScores.GetValueOrDefault(taskId, 50),
+                            Reasoning = prioritization.Reasoning.GetValueOrDefault(taskId, "")
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AiSummary = $"Error loading insights: {ex.Message}";
+        }
+        finally
+        {
+            IsAiLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetPriorityLabel(int score) => score switch
+    {
+        >= 90 => "Critical",
+        >= 70 => "High",
+        >= 50 => "Medium",
+        _ => "Low"
+    };
+
+    private string GetPriorityClass(int score) => score switch
+    {
+        >= 90 => "critical",
+        >= 70 => "high",
+        >= 50 => "medium",
+        _ => "low"
+    };
+
+    // Time scheduling methods
+    private string FormatTime(TimeSpan? time)
+    {
+        if (!time.HasValue) return "";
+        var dt = DateTime.Today.Add(time.Value);
+        return dt.ToString("h:mm tt");
+    }
+
+    private void OpenTimeEditor(DailyTask task)
+    {
+        EditingTimeTask = task;
+        EditingTimeValue = task.ScheduledTime.HasValue
+            ? task.ScheduledTime.Value.ToString(@"hh\:mm")
+            : "09:00";
+        EditingDuration = task.DurationMinutes > 0 ? task.DurationMinutes : 30;
+    }
+
+    private void CloseTimeEditor()
+    {
+        EditingTimeTask = null;
+    }
+
+    private async Task SaveTaskTime()
+    {
+        if (EditingTimeTask == null) return;
+
+        TimeSpan? time = null;
+        if (TimeSpan.TryParse(EditingTimeValue, out var parsed))
+        {
+            time = parsed;
+        }
+
+        await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, EditingDuration);
+        EditingTimeTask = null;
+        await LoadTasksAsync();
+    }
+
+    private async Task ClearTaskTime(DailyTask task)
+    {
+        await TaskService.ScheduleTaskTimeAsync(task.Id, null, 30);
+        await LoadTasksAsync();
+    }
+
+    private class CalendarDay
+    {
+        public DateTime Date { get; set; }
+        public bool IsCurrentMonth { get; set; }
+    }
+
+    private class PrioritizedTask
+    {
+        public DailyTask Task { get; set; } = null!;
+        public int PriorityScore { get; set; }
+        public string Reasoning { get; set; } = "";
+    }
+}

@@ -1,0 +1,35 @@
+<Application x:Class="PFD.Wpf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:PFD.Wpf"
+             xmlns:converters="clr-namespace:PFD.Wpf.Converters"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Material Design -->
+                <materialDesign:BundledTheme BaseTheme="Light" PrimaryColor="Teal" SecondaryColor="Pink" />
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign2.Defaults.xaml" />
+
+                <!-- Custom Theme -->
+                <ResourceDictionary Source="Themes/GoldPinkTealTheme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Global Converters -->
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+            <converters:BoolToStrikethroughConverter x:Key="StrikethroughConverter"/>
+            <converters:BoolToColorConverter x:Key="CompletedColorConverter"
+                                             TrueColor="{StaticResource TaskRowCompletedBg}"
+                                             FalseColor="{StaticResource TaskRowBg}"/>
+            <converters:DayIndicatorConverter x:Key="DayIndicatorConverter"/>
+            <converters:DayTextConverter x:Key="DayTextConverter"/>
+            <converters:AiButtonTextConverter x:Key="AiButtonTextConverter"/>
+            <converters:PriorityScoreToColorConverter x:Key="PriorityScoreToColorConverter"/>
+            <converters:TimeSpanToStringConverter x:Key="TimeSpanToStringConverter"/>
+            <converters:NullableTimeSpanToStringConverter x:Key="NullableTimeSpanToStringConverter"/>
+            <converters:HasScheduledTimeConverter x:Key="HasScheduledTimeConverter"/>
+            <converters:DurationToStringConverter x:Key="DurationToStringConverter"/>
+            <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

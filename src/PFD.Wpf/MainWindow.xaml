@@ -1,0 +1,835 @@
+<Window x:Class="PFD.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:PFD.Wpf"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Title="PFD - Personal Daily Planner"
+        Height="650" Width="1000"
+        MinHeight="500" MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        TextElement.FontWeight="Regular"
+        TextElement.FontSize="13"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{DynamicResource MaterialDesignFont}">
+
+    <!-- Main Container -->
+    <Border Background="{DynamicResource FrameBg}"
+            BorderBrush="{DynamicResource FrameBorder}"
+            BorderThickness="2"
+            Padding="8">
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Calendar + Theme Selector -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Calendar -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource CalendarBg}"
+                        CornerRadius="6"
+                        Padding="5"
+                        Margin="0,0,8,8">
+                    <Calendar x:Name="TaskCalendar"
+                              SelectedDate="{Binding SelectedDate, Mode=TwoWay}"
+                              DisplayDate="{Binding CurrentMonth, Mode=TwoWay}"
+                              HorizontalAlignment="Center"
+                              Style="{StaticResource MaterialDesignCalendarPortrait}"
+                              Background="Transparent"
+                              Foreground="{DynamicResource TextPrimary}"/>
+                </Border>
+
+                <!-- Settings Panel -->
+                <Border Grid.Row="1"
+                        Background="{DynamicResource CalendarHeaderBg}"
+                        CornerRadius="6"
+                        Padding="10"
+                        Margin="0,0,8,0">
+                    <StackPanel>
+                        <!-- View Mode -->
+                        <TextBlock Text="View"
+                                   FontWeight="Bold" FontSize="14"
+                                   Foreground="{DynamicResource TextLight}"
+                                   Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <RadioButton x:Name="DailyViewRadio"
+                                         Content="Daily"
+                                         IsChecked="{Binding IsDailyView}"
+                                         Foreground="{DynamicResource TextLight}"
+                                         Style="{StaticResource MaterialDesignTabRadioButtonBottom}"
+                                         Margin="0,0,8,0"/>
+                            <RadioButton x:Name="WeeklyViewRadio"
+                                         Content="Weekly"
+                                         IsChecked="{Binding IsWeeklyView}"
+                                         Foreground="{DynamicResource TextLight}"
+                                         Style="{StaticResource MaterialDesignTabRadioButtonBottom}"/>
+                        </StackPanel>
+
+                        <!-- Theme Dropdown -->
+                        <TextBlock Text="Theme"
+                                   FontWeight="Bold" FontSize="14"
+                                   Foreground="{DynamicResource TextLight}"
+                                   Margin="0,0,0,6"/>
+                        <ComboBox x:Name="ThemeComboBox"
+                                  SelectionChanged="ThemeComboBox_SelectionChanged"
+                                  Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                  Width="200"
+                                  HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Red" Tag="Reddish"/>
+                            <ComboBoxItem Content="Orange" Tag="Orangish"/>
+                            <ComboBoxItem Content="Yellow" Tag="Yellowish"/>
+                            <ComboBoxItem Content="Blue" Tag="Blueish"/>
+                            <ComboBoxItem Content="Dark" Tag="Blackish"/>
+                            <ComboBoxItem Content="Light" Tag="Whiteish"/>
+                            <ComboBoxItem Content="Preppy" Tag="Preppy"/>
+                            <ComboBoxItem Content="Teal" Tag="GoldPinkTeal" IsSelected="True"/>
+                        </ComboBox>
+
+                        <!-- AI Insights Toggle -->
+                        <TextBlock Text="AI Assistant"
+                                   FontWeight="Bold" FontSize="14"
+                                   Foreground="{DynamicResource TextLight}"
+                                   Margin="0,16,0,6"/>
+                        <Button Command="{Binding ToggleAiPanelCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Foreground="{DynamicResource TextLight}"
+                                BorderBrush="{DynamicResource TextLight}"
+                                HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Robot" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding ShowAiPanel, Converter={StaticResource AiButtonTextConverter}}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- RIGHT: Tasks -->
+            <Border Grid.Column="1"
+                    Background="{DynamicResource TaskListBg}"
+                    CornerRadius="6"
+                    Padding="12">
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Task Header -->
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource TaskHeaderBg}"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <materialDesign:PackIcon Grid.Column="0"
+                                                     Kind="CalendarCheck"
+                                                     Width="24" Height="24"
+                                                     Foreground="{DynamicResource TextLight}"
+                                                     VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding SelectedDateHeader}"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextLight}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="10,0,0,0"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Add Task Input -->
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding NewTaskText, UpdateSourceTrigger=PropertyChanged}"
+                                 materialDesign:HintAssist.Hint="Enter a new task..."
+                                 materialDesign:HintAssist.IsFloating="False"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 FontSize="13"
+                                 Padding="8,6"
+                                 VerticalContentAlignment="Center">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Return" Command="{Binding AddTaskCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
+
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding NewTaskTimeText, UpdateSourceTrigger=PropertyChanged}"
+                                 materialDesign:HintAssist.Hint="Time (HH:mm)"
+                                 materialDesign:HintAssist.IsFloating="False"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 FontSize="13"
+                                 Width="90"
+                                 Padding="8,6"
+                                 Margin="8,0,0,0"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Schedule time (optional, e.g. 09:00 or 14:30)">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Return" Command="{Binding AddTaskCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
+
+                        <Button Grid.Column="2"
+                                Content="Add"
+                                Command="{Binding AddTaskCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                materialDesign:ButtonAssist.CornerRadius="4"
+                                Margin="8,0,0,0"
+                                Padding="16,6"
+                                Height="36"/>
+                    </Grid>
+
+                    <!-- Overdue Section (visible when IsDailyView and has overdue tasks) -->
+                    <Border Grid.Row="2"
+                            Background="#FFEBEE"
+                            BorderBrush="#EF5350"
+                            BorderThickness="2"
+                            CornerRadius="6"
+                            Padding="10"
+                            Margin="0,0,0,10"
+                            Visibility="{Binding HasOverdueTasks, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <materialDesign:PackIcon Kind="AlertCircle" Width="18" Height="18" Foreground="#C62828" VerticalAlignment="Center"/>
+                                <TextBlock Text="Overdue" FontWeight="Bold" Foreground="#C62828" FontSize="14" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding OverdueTasks.Count, StringFormat=' ({0})'}" Foreground="#C62828" FontSize="14" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding OverdueTasks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,4" Padding="8" CornerRadius="4" Background="#FFCDD2" BorderBrush="#EF5350" BorderThickness="0,0,0,0">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding IsCompleted, Mode=OneWay}"
+                                                          Style="{StaticResource MaterialDesignCheckBox}"
+                                                          Command="{Binding DataContext.ToggleOverdueTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}"
+                                                          VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="13" Foreground="#2F0000" VerticalAlignment="Center" Margin="8,0" TextWrapping="Wrap"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding TaskDate, StringFormat='{}{0:M/d}'}" FontSize="11" Foreground="#C62828" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0"/>
+                                                <Button Grid.Column="3"
+                                                        Command="{Binding DataContext.MoveOverdueToTodayCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource MaterialDesignIconButton}"
+                                                        ToolTip="Move to today"
+                                                        Width="28" Height="28"
+                                                        VerticalAlignment="Center"
+                                                        Background="#4CAF50">
+                                                    <materialDesign:PackIcon Kind="ArrowRight" Width="16" Height="16" Foreground="White"/>
+                                                </Button>
+                                                <Button Grid.Column="4"
+                                                        Command="{Binding DataContext.DeleteOverdueTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource MaterialDesignIconButton}"
+                                                        ToolTip="Delete task"
+                                                        Width="28" Height="28"
+                                                        VerticalAlignment="Center">
+                                                    <materialDesign:PackIcon Kind="Delete" Width="16" Height="16"/>
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Daily Task List (visible when IsDailyView) -->
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsDailyView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <!-- Scheduled Tasks Section -->
+                            <StackPanel Visibility="{Binding ScheduledTasks.Count, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <materialDesign:PackIcon Kind="ClockOutline" Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Scheduled" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding ScheduledTasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6" Padding="10" CornerRadius="4" BorderThickness="0,0,0,2" BorderBrush="#00897B">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource TaskRowBg}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource TaskRowCompletedBg}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <CheckBox Grid.Column="0"
+                                                              IsChecked="{Binding IsCompleted, Mode=OneWay}"
+                                                              Style="{StaticResource MaterialDesignCheckBox}"
+                                                              Command="{Binding DataContext.ToggleTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              CommandParameter="{Binding}"
+                                                              VerticalAlignment="Center"/>
+
+                                                    <!-- Time display -->
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding DataContext.OpenTimeEditorCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource MaterialDesignFlatButton}"
+                                                            Padding="4,2"
+                                                            MinWidth="70"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip="Edit time">
+                                                        <TextBlock Text="{Binding ScheduledTime, Converter={StaticResource NullableTimeSpanToStringConverter}}"
+                                                                   FontSize="12" FontWeight="Bold" Foreground="#00897B"/>
+                                                    </Button>
+
+                                                    <TextBox Grid.Column="2"
+                                                             Text="{Binding Title, UpdateSourceTrigger=LostFocus}"
+                                                             FontSize="14"
+                                                             Foreground="{DynamicResource TextPrimary}"
+                                                             TextDecorations="{Binding IsCompleted, Converter={StaticResource StrikethroughConverter}}"
+                                                             TextWrapping="Wrap"
+                                                             VerticalAlignment="Center"
+                                                             Margin="8,0"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             Padding="4,2"
+                                                             LostFocus="TaskTextBox_LostFocus">
+                                                        <TextBox.Style>
+                                                            <Style TargetType="TextBox" BasedOn="{StaticResource MaterialDesignTextBox}">
+                                                                <Setter Property="BorderThickness" Value="0"/>
+                                                                <Setter Property="Background" Value="Transparent"/>
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="IsFocused" Value="True">
+                                                                        <Setter Property="Background" Value="{DynamicResource InputBg}"/>
+                                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource InputBorder}"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBox.Style>
+                                                        <TextBox.InputBindings>
+                                                            <KeyBinding Key="Return" Command="{Binding DataContext.UpdateTaskTitleCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                            <KeyBinding Key="Escape" Command="{x:Static ApplicationCommands.Undo}"/>
+                                                        </TextBox.InputBindings>
+                                                    </TextBox>
+
+                                                    <!-- Duration display -->
+                                                    <TextBlock Grid.Column="3"
+                                                               Text="{Binding DurationMinutes, Converter={StaticResource DurationToStringConverter}}"
+                                                               FontSize="11" Foreground="{DynamicResource TextPrimary}" Opacity="0.7"
+                                                               VerticalAlignment="Center" Margin="4,0"/>
+
+                                                    <!-- Clear time button -->
+                                                    <Button Grid.Column="4"
+                                                            Command="{Binding DataContext.ClearTaskTimeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource MaterialDesignIconButton}"
+                                                            ToolTip="Remove scheduled time"
+                                                            Width="28" Height="28"
+                                                            VerticalAlignment="Center">
+                                                        <materialDesign:PackIcon Kind="ClockRemoveOutline" Width="16" Height="16"/>
+                                                    </Button>
+
+                                                    <Button Grid.Column="5"
+                                                            Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource MaterialDesignIconButton}"
+                                                            ToolTip="Delete task"
+                                                            Width="32" Height="32"
+                                                            VerticalAlignment="Center">
+                                                        <materialDesign:PackIcon Kind="Delete" Width="18" Height="18"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- All-Day Tasks Section -->
+                            <StackPanel Visibility="{Binding AllDayTasks.Count, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                        Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <materialDesign:PackIcon Kind="FormatListBulletedSquare" Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Tasks" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding AllDayTasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6" Padding="10" CornerRadius="4">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource TaskRowBg}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource TaskRowCompletedBg}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <CheckBox Grid.Column="0"
+                                                              IsChecked="{Binding IsCompleted, Mode=OneWay}"
+                                                              Style="{StaticResource MaterialDesignCheckBox}"
+                                                              Command="{Binding DataContext.ToggleTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              CommandParameter="{Binding}"
+                                                              VerticalAlignment="Center"/>
+
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding Title, UpdateSourceTrigger=LostFocus}"
+                                                             FontSize="14"
+                                                             Foreground="{DynamicResource TextPrimary}"
+                                                             TextDecorations="{Binding IsCompleted, Converter={StaticResource StrikethroughConverter}}"
+                                                             TextWrapping="Wrap"
+                                                             VerticalAlignment="Center"
+                                                             Margin="8,0"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             Padding="4,2"
+                                                             LostFocus="TaskTextBox_LostFocus">
+                                                        <TextBox.Style>
+                                                            <Style TargetType="TextBox" BasedOn="{StaticResource MaterialDesignTextBox}">
+                                                                <Setter Property="BorderThickness" Value="0"/>
+                                                                <Setter Property="Background" Value="Transparent"/>
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="IsFocused" Value="True">
+                                                                        <Setter Property="Background" Value="{DynamicResource InputBg}"/>
+                                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource InputBorder}"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBox.Style>
+                                                        <TextBox.InputBindings>
+                                                            <KeyBinding Key="Return" Command="{Binding DataContext.UpdateTaskTitleCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                            <KeyBinding Key="Escape" Command="{x:Static ApplicationCommands.Undo}"/>
+                                                        </TextBox.InputBindings>
+                                                    </TextBox>
+
+                                                    <!-- Schedule time button -->
+                                                    <Button Grid.Column="2"
+                                                            Command="{Binding DataContext.OpenTimeEditorCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource MaterialDesignIconButton}"
+                                                            ToolTip="Schedule time"
+                                                            Width="28" Height="28"
+                                                            VerticalAlignment="Center">
+                                                        <materialDesign:PackIcon Kind="ClockPlusOutline" Width="16" Height="16"/>
+                                                    </Button>
+
+                                                    <Button Grid.Column="3"
+                                                            Command="{Binding DataContext.DeleteTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource MaterialDesignIconButton}"
+                                                            ToolTip="Delete task"
+                                                            Width="32" Height="32"
+                                                            VerticalAlignment="Center">
+                                                        <materialDesign:PackIcon Kind="Delete" Width="18" Height="18"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Empty state -->
+                            <TextBlock Text="No tasks for this day. Add one above!"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       Opacity="0.6"
+                                       Margin="0,20">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding ScheduledTasks.Count}" Value="0"/>
+                                                    <Condition Binding="{Binding AllDayTasks.Count}" Value="0"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <MultiDataTrigger.Setters>
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </MultiDataTrigger.Setters>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Weekly View (visible when IsWeeklyView) - shows tasks with day indicators -->
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsWeeklyView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <ItemsControl ItemsSource="{Binding WeeklyTasks}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,6"
+                                            Padding="10"
+                                            CornerRadius="4">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{DynamicResource TaskRowBg}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource TaskRowCompletedBg}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <CheckBox Grid.Column="0"
+                                                      IsChecked="{Binding IsCompleted, Mode=OneWay}"
+                                                      Style="{StaticResource MaterialDesignCheckBox}"
+                                                      Command="{Binding DataContext.ToggleWeeklyTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      CommandParameter="{Binding}"
+                                                      VerticalAlignment="Center"/>
+
+                                            <TextBox Grid.Column="1"
+                                                     Text="{Binding Title, UpdateSourceTrigger=LostFocus}"
+                                                     FontSize="14"
+                                                     Foreground="{DynamicResource TextPrimary}"
+                                                     TextDecorations="{Binding IsCompleted, Converter={StaticResource StrikethroughConverter}}"
+                                                     TextWrapping="Wrap"
+                                                     VerticalAlignment="Center"
+                                                     Margin="8,0"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="4,2"
+                                                     LostFocus="WeeklyTaskTextBox_LostFocus">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource MaterialDesignTextBox}">
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsFocused" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource InputBg}"/>
+                                                                <Setter Property="BorderThickness" Value="1"/>
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource InputBorder}"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                                <TextBox.InputBindings>
+                                                    <KeyBinding Key="Return" Command="{Binding DataContext.UpdateWeeklyTaskTitleCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                                    <KeyBinding Key="Escape" Command="{x:Static ApplicationCommands.Undo}"/>
+                                                </TextBox.InputBindings>
+                                            </TextBox>
+
+                                            <!-- Day indicators M T W T F -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0">
+                                                <Border Width="24" Height="24" CornerRadius="2" Margin="1"
+                                                        Background="{Binding IsMondayTask, Converter={StaticResource DayIndicatorConverter}}">
+                                                    <TextBlock Text="M" FontSize="11" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{Binding IsMondayTask, Converter={StaticResource DayTextConverter}}"/>
+                                                </Border>
+                                                <Border Width="24" Height="24" CornerRadius="2" Margin="1"
+                                                        Background="{Binding IsTuesdayTask, Converter={StaticResource DayIndicatorConverter}}">
+                                                    <TextBlock Text="T" FontSize="11" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{Binding IsTuesdayTask, Converter={StaticResource DayTextConverter}}"/>
+                                                </Border>
+                                                <Border Width="24" Height="24" CornerRadius="2" Margin="1"
+                                                        Background="{Binding IsWednesdayTask, Converter={StaticResource DayIndicatorConverter}}">
+                                                    <TextBlock Text="W" FontSize="11" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{Binding IsWednesdayTask, Converter={StaticResource DayTextConverter}}"/>
+                                                </Border>
+                                                <Border Width="24" Height="24" CornerRadius="2" Margin="1"
+                                                        Background="{Binding IsThursdayTask, Converter={StaticResource DayIndicatorConverter}}">
+                                                    <TextBlock Text="T" FontSize="11" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{Binding IsThursdayTask, Converter={StaticResource DayTextConverter}}"/>
+                                                </Border>
+                                                <Border Width="24" Height="24" CornerRadius="2" Margin="1"
+                                                        Background="{Binding IsFridayTask, Converter={StaticResource DayIndicatorConverter}}">
+                                                    <TextBlock Text="F" FontSize="11" FontWeight="Bold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Foreground="{Binding IsFridayTask, Converter={StaticResource DayTextConverter}}"/>
+                                                </Border>
+                                            </StackPanel>
+
+                                            <Button Grid.Column="3"
+                                                    Command="{Binding DataContext.DeleteWeeklyTaskCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource MaterialDesignIconButton}"
+                                                    ToolTip="Delete task"
+                                                    Width="32" Height="32"
+                                                    VerticalAlignment="Center">
+                                                <materialDesign:PackIcon Kind="Delete" Width="18" Height="18"/>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- AI INSIGHTS PANEL (Column 2) -->
+            <Border Grid.Column="2"
+                    Background="{DynamicResource TaskListBg}"
+                    CornerRadius="6"
+                    Padding="12"
+                    Margin="8,0,0,0"
+                    Width="280"
+                    Visibility="{Binding ShowAiPanel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- AI Header -->
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource TaskHeaderBg}"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <materialDesign:PackIcon Grid.Column="0"
+                                                     Kind="Robot"
+                                                     Width="24" Height="24"
+                                                     Foreground="{DynamicResource TextLight}"
+                                                     VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="1"
+                                       Text="AI Insights"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextLight}"
+                                       VerticalAlignment="Center"
+                                       Margin="10,0,0,0"/>
+
+                            <Button Grid.Column="2"
+                                    Command="{Binding RefreshAiInsightsCommand}"
+                                    Style="{StaticResource MaterialDesignIconButton}"
+                                    ToolTip="Refresh insights"
+                                    Width="28" Height="28"
+                                    VerticalAlignment="Center">
+                                <materialDesign:PackIcon Kind="Refresh" Width="16" Height="16" Foreground="{DynamicResource TextLight}"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- AI Content -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <!-- Loading indicator -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20"
+                                        Visibility="{Binding IsAiLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <materialDesign:PackIcon Kind="Loading" Width="24" Height="24" Foreground="{DynamicResource TextPrimary}"/>
+                                <TextBlock Text="Analyzing..." Foreground="{DynamicResource TextPrimary}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- Summary Section -->
+                            <Border Background="{DynamicResource TaskRowBg}" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="Productivity Summary" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="{Binding AiSummary}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextPrimary}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Suggestions Section -->
+                            <Border Background="{DynamicResource TaskRowBg}" CornerRadius="4" Padding="10" Margin="0,0,0,10"
+                                    Visibility="{Binding AiSuggestions.Count, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Suggestions" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,6"/>
+                                    <ItemsControl ItemsSource="{Binding AiSuggestions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                                    <materialDesign:PackIcon Kind="LightbulbOutline" Width="14" Height="14" Foreground="#FFC107" VerticalAlignment="Top" Margin="0,2,6,0"/>
+                                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextPrimary}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Priority Tasks Section -->
+                            <Border Background="{DynamicResource TaskRowBg}" CornerRadius="4" Padding="10" Margin="0,0,0,10"
+                                    Visibility="{Binding PrioritizedTasks.Count, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel>
+                                    <TextBlock Text="Priority Tasks" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,6"/>
+                                    <ItemsControl ItemsSource="{Binding PrioritizedTasks}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,0,0,6" Padding="8" CornerRadius="4"
+                                                        BorderThickness="0,0,0,2"
+                                                        BorderBrush="{Binding PriorityScore, Converter={StaticResource PriorityScoreToColorConverter}}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+
+                                                        <Border Grid.Column="0" Grid.RowSpan="2"
+                                                                Background="{Binding PriorityScore, Converter={StaticResource PriorityScoreToColorConverter}}"
+                                                                CornerRadius="3" Padding="4,2" VerticalAlignment="Top" Margin="0,0,8,0">
+                                                            <TextBlock Text="{Binding PriorityLabel}" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                                        </Border>
+
+                                                        <TextBlock Grid.Column="1" Grid.Row="0"
+                                                                   Text="{Binding Task.Title}" FontSize="12" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"/>
+                                                        <TextBlock Grid.Column="1" Grid.Row="1"
+                                                                   Text="{Binding Reasoning}" FontSize="10"
+                                                                   Foreground="{DynamicResource TextPrimary}" Opacity="0.7"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- Time Editor Dialog Overlay -->
+            <Grid Grid.ColumnSpan="3"
+                  Visibility="{Binding IsTimeEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <!-- Dark overlay -->
+                <Border Background="#80000000">
+                    <Border.InputBindings>
+                        <MouseBinding MouseAction="LeftClick" Command="{Binding CloseTimeEditorCommand}"/>
+                    </Border.InputBindings>
+                </Border>
+
+                <!-- Dialog -->
+                <Border Background="{DynamicResource TaskListBg}"
+                        CornerRadius="8"
+                        Padding="20"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MinWidth="300"
+                        materialDesign:ElevationAssist.Elevation="Dp8">
+                    <StackPanel>
+                        <!-- Header -->
+                        <Grid Margin="0,0,0,16">
+                            <TextBlock Text="Schedule Task" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                            <Button HorizontalAlignment="Right"
+                                    Command="{Binding CloseTimeEditorCommand}"
+                                    Style="{StaticResource MaterialDesignIconButton}"
+                                    Width="28" Height="28">
+                                <materialDesign:PackIcon Kind="Close" Width="16" Height="16"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- Task title -->
+                        <TextBlock Text="{Binding EditingTimeTask.Title}"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource TextPrimary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,16"/>
+
+                        <!-- Time input -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="Time" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding EditingTimeText, UpdateSourceTrigger=PropertyChanged}"
+                                     materialDesign:HintAssist.Hint="HH:mm (e.g. 09:00)"
+                                     Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                     FontSize="14"/>
+                        </StackPanel>
+
+                        <!-- Duration dropdown -->
+                        <StackPanel Margin="0,0,0,20">
+                            <TextBlock Text="Duration" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                            <ComboBox SelectedValue="{Binding EditingDuration}"
+                                      SelectedValuePath="Tag"
+                                      Style="{StaticResource MaterialDesignOutlinedComboBox}">
+                                <ComboBoxItem Content="15 minutes" Tag="15"/>
+                                <ComboBoxItem Content="30 minutes" Tag="30"/>
+                                <ComboBoxItem Content="45 minutes" Tag="45"/>
+                                <ComboBoxItem Content="1 hour" Tag="60"/>
+                                <ComboBoxItem Content="1.5 hours" Tag="90"/>
+                                <ComboBoxItem Content="2 hours" Tag="120"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Cancel"
+                                    Command="{Binding CloseTimeEditorCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                                    Margin="0,0,8,0"/>
+                            <Button Content="Save"
+                                    Command="{Binding SaveTaskTimeCommand}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

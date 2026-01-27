@@ -1,0 +1,55 @@
+# .NET
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+*.cache
+*.vsidx
+*.log
+*.vs/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+bld/
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# IDE
+.vs/
+.vscode/
+*.swp
+*~
+.idea/
+
+# User-specific files
+*.rsuser
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Test Results
+[Tt]est[Rr]esult*/
+*.trx
+
+# Local database files
+*.db
+*.db-journal
+
+# Publish output
+publish/
