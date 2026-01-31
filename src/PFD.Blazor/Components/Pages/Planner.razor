@@ -460,7 +460,9 @@
                         var opacity = 1.0 - (Math.Abs(dayOffset) * 0.15);
 
                         <div class="day-slot @(isToday ? "today" : "") @(isSelected ? "selected" : "") @(isWeekend ? "weekend" : "")"
-                             style="opacity: @opacity.ToString("F2");">
+                             style="opacity: @opacity.ToString("F2"); cursor: pointer;"
+                             @onclick="() => SelectDateFromRoller(displayDate)"
+                             @onclick:stopPropagation="true">
                             <span class="day-name">@displayDate.ToString("ddd")</span>
                             <span class="day-num">@displayDate.Day</span>
                             <span class="day-month">@displayDate.ToString("MMM")</span>
@@ -1135,6 +1137,17 @@
         if (ShowAiPanel)
         {
             _ = LoadAiInsightsAsync();
+        }
+    }
+
+    // Select date from day roller click
+    private async Task SelectDateFromRoller(DateTime date)
+    {
+        // Only select if it wasn't a drag
+        if (totalDragDistance < 10)
+        {
+            SelectedDate = date;
+            await LoadTasksAsync();
         }
     }
 
