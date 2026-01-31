@@ -3108,145 +3108,144 @@
 /* Old timeline classes removed - replaced by schedule-panel */
 
 /* ===== HIGH CONTRAST MODE ===== */
-/* Black text on white background for task panel - maximum readability */
+/* Black text on white background for VERTICAL PANELS ONLY */
 
-.high-contrast .task-list {
+/* Day Roller - white background, black text */
+.high-contrast .day-roller {
     background: #fff !important;
 }
 
-.high-contrast .task-row {
+.high-contrast .day-slot,
+.high-contrast .day-slot-static {
     background: #fff !important;
+    color: #000 !important;
     border-bottom: 1px solid #ccc !important;
 }
 
-.high-contrast .task-row:hover {
+.high-contrast .day-slot .day-name,
+.high-contrast .day-slot .day-num,
+.high-contrast .day-slot .day-month {
+    color: #000 !important;
+    text-shadow: none !important;
+}
+
+/* Today indicator - gray background */
+.high-contrast .day-slot.today,
+.high-contrast .day-slot-static.today {
+    background: #d0d0d0 !important;
+    color: #000 !important;
+}
+
+.high-contrast .day-slot.selected {
+    background: #e8e8e8 !important;
+    color: #000 !important;
+}
+
+.high-contrast .day-slot:hover {
     background: #f0f0f0 !important;
 }
 
-.high-contrast .task-row.editing {
+/* Day nav buttons */
+.high-contrast .day-nav-btn {
+    background: #fff !important;
+    color: #000 !important;
+    border: 1px solid #333 !important;
+}
+
+.high-contrast .day-nav-btn:hover {
+    background: #e0e0e0 !important;
+}
+
+.high-contrast .roller-today-btn {
+    background: #333 !important;
+    color: #fff !important;
+}
+
+/* Time & Tasks Panel - white background */
+.high-contrast .time-tasks-panel {
+    background: #fff !important;
+}
+
+.high-contrast .time-panel-body {
+    background: #fff !important;
+}
+
+/* Time column */
+.high-contrast .time-column {
+    background: #f8f8f8 !important;
+}
+
+.high-contrast .time-slot {
+    background: #f8f8f8 !important;
+    border-bottom: 1px solid #ddd !important;
+}
+
+.high-contrast .time-slot .hour-text {
+    color: #000 !important;
+    font-weight: 600 !important;
+}
+
+.high-contrast .time-slot.now {
+    background: #e0e0e0 !important;
+}
+
+.high-contrast .time-slot.off-hours {
+    background: #f0f0f0 !important;
+}
+
+.high-contrast .time-slot.off-hours .hour-text {
+    color: #666 !important;
+}
+
+/* Tasks column */
+.high-contrast .tasks-column {
+    background: #fff !important;
+}
+
+.high-contrast .task-slot {
+    background: #fff !important;
+    border-bottom: 1px solid #ddd !important;
+}
+
+.high-contrast .task-slot.now {
     background: #e8e8e8 !important;
 }
 
-/* High contrast text - pure black */
-.high-contrast .task-title {
+/* Task items in timeline */
+.high-contrast .slot-task {
+    background: #f0f0f0 !important;
+    border: 1px solid #333 !important;
     color: #000 !important;
-    font-weight: 500;
 }
 
-.high-contrast .task-title.strikethrough {
+.high-contrast .slot-task .t-time {
+    color: #000 !important;
+    font-weight: 700 !important;
+}
+
+.high-contrast .slot-task .t-title {
+    color: #000 !important;
+}
+
+.high-contrast .slot-task.done {
+    background: #e0e0e0 !important;
+}
+
+.high-contrast .slot-task.done .t-title {
     color: #666 !important;
     text-decoration: line-through;
 }
 
-.high-contrast .task-time {
-    color: #000 !important;
-    font-weight: 600;
+.high-contrast .slot-task .t-src {
+    background: #333 !important;
+    color: #fff !important;
 }
 
-.high-contrast .task-duration {
-    color: #333 !important;
-    background: #e0e0e0 !important;
-}
-
-/* Section headers in high contrast */
-.high-contrast .section-header {
-    color: #000 !important;
+.high-contrast .slot-task.google {
     background: #f5f5f5 !important;
-    border-bottom: 2px solid #333 !important;
+    border: 1px solid #666 !important;
 }
 
-.high-contrast .section-header span {
-    color: #000 !important;
-}
-
-/* Checkboxes more visible */
-.high-contrast .task-row input[type="checkbox"] {
-    accent-color: #000;
-    width: 18px;
-    height: 18px;
-}
-
-/* Completed tasks in high contrast - gray background */
-.high-contrast .task-row.completed {
-    background: #f0f0f0 !important;
-}
-
-.high-contrast .task-row.completed .task-title {
-    color: #888 !important;
-}
-
-/* Past tasks in high contrast */
-.high-contrast .task-row.past {
-    background: #f8f8f8 !important;
-}
-
-.high-contrast .task-row.past .task-title,
-.high-contrast .task-row.past .task-time {
-    color: #999 !important;
-}
-
-/* Today indicator - gray background as requested */
-.high-contrast .day-slot.today,
-.high-contrast .day-slot-static.today {
-    background: #e0e0e0 !important;
-    color: #000 !important;
-}
-
-/* Task input in high contrast */
-.high-contrast .task-input-container input {
-    background: #fff !important;
-    color: #000 !important;
-    border: 2px solid #333 !important;
-}
-
-.high-contrast .task-input-container input::placeholder {
-    color: #666 !important;
-}
-
-/* No tasks message */
-.high-contrast .no-tasks {
-    color: #666 !important;
-}
-
-/* Buttons in high contrast */
-.high-contrast .delete-btn,
-.high-contrast .schedule-btn,
-.high-contrast .clear-time-btn {
-    background: #333 !important;
-    color: #fff !important;
-    border: none !important;
-}
-
-.high-contrast .delete-btn:hover,
-.high-contrast .schedule-btn:hover,
-.high-contrast .clear-time-btn:hover {
-    background: #000 !important;
-}
-
-/* Scheduled section in high contrast */
-.high-contrast .scheduled-section {
-    background: #fff !important;
-    border: 1px solid #ccc !important;
-}
-
-.high-contrast .allday-section {
-    background: #fff !important;
-    border: 1px solid #ccc !important;
-}
-
-/* Weekly view task rows */
-.high-contrast .task-date {
-    color: #000 !important;
-    font-weight: 600;
-}
-
-.high-contrast .day-indicators .day-indicator {
-    color: #666 !important;
-    border-color: #ccc !important;
-}
-
-.high-contrast .day-indicators .day-indicator.active {
-    background: #333 !important;
-    color: #fff !important;
-    border-color: #333 !important;
+.high-contrast .slot-task.google .t-src {
+    background: #666 !important;
 }
