@@ -1,0 +1,357 @@
+@page "/settings"
+@using PFD.Shared.Interfaces
+@inject ICalendarCredentialsService CredentialsService
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<div class="settings-container">
+    <div class="settings-header">
+        <button class="back-btn" @onclick="GoBack">Back</button>
+        <h1>Settings</h1>
+    </div>
+
+    @if (!IsAuthenticated)
+    {
+        <div class="auth-required">
+            <p>Please log in to access settings.</p>
+            <button class="login-btn" @onclick="GoToLogin">Go to Login</button>
+        </div>
+    }
+    else
+    {
+        <div class="settings-content">
+            <section class="settings-section">
+                <h2>Calendar Integrations</h2>
+                <p class="section-desc">Connect external calendars to import events into your planner.</p>
+
+                <!-- Google Calendar -->
+                <div class="credential-card">
+                    <div class="card-header" @onclick="ToggleGoogle">
+                        <span class="provider-icon google">G</span>
+                        <div class="provider-info">
+                            <h3>Google Calendar</h3>
+                            <span class="status @(GoogleCredentials?.IsConnected == true ? "connected" : "")">
+                                @(GoogleCredentials?.IsConnected == true ? "Connected" : (GoogleCredentials != null ? "Configured" : "Not configured"))
+                            </span>
+                        </div>
+                        <button class="expand-btn">
+                            @(ExpandedProvider == "Google" ? "v" : ">")
+                        </button>
+                    </div>
+
+                    @if (ExpandedProvider == "Google")
+                    {
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>Client ID</label>
+                                <input type="text" @bind="GoogleClientId" @bind:event="oninput" placeholder="Your Google OAuth Client ID" />
+                            </div>
+                            <div class="form-group">
+                                <label>Client Secret</label>
+                                <input type="text" @bind="GoogleClientSecret" @bind:event="oninput" placeholder="Your Google OAuth Client Secret" />
+                            </div>
+                            <div class="form-group">
+                                <label>Redirect URI</label>
+                                <input type="text" @bind="GoogleRedirectUri" @bind:event="oninput" placeholder="https://localhost:5001/auth/google/callback" />
+                            </div>
+                            <div class="card-actions">
+                                <button class="save-btn" @onclick="SaveGoogleCredentials">Save</button>
+                                @if (GoogleCredentials != null)
+                                {
+                                    <button class="delete-btn" @onclick="DeleteGoogleCredentials">Remove</button>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(GoogleMessage))
+                            {
+                                <div class="message @(GoogleMessage.Contains("Error") ? "error" : "success")">@GoogleMessage</div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Microsoft Calendar -->
+                <div class="credential-card">
+                    <div class="card-header" @onclick="ToggleMicrosoft">
+                        <span class="provider-icon microsoft">M</span>
+                        <div class="provider-info">
+                            <h3>Microsoft / Teams Calendar</h3>
+                            <span class="status @(MicrosoftCredentials?.IsConnected == true ? "connected" : "")">
+                                @(MicrosoftCredentials?.IsConnected == true ? "Connected" : (MicrosoftCredentials != null ? "Configured" : "Not configured"))
+                            </span>
+                        </div>
+                        <button class="expand-btn">
+                            @(ExpandedProvider == "Microsoft" ? "v" : ">")
+                        </button>
+                    </div>
+
+                    @if (ExpandedProvider == "Microsoft")
+                    {
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>Client ID</label>
+                                <input type="text" @bind="MicrosoftClientId" @bind:event="oninput" placeholder="Your Microsoft App Client ID" />
+                            </div>
+                            <div class="form-group">
+                                <label>Client Secret</label>
+                                <input type="text" @bind="MicrosoftClientSecret" @bind:event="oninput" placeholder="Your Microsoft App Client Secret" />
+                            </div>
+                            <div class="form-group">
+                                <label>Tenant ID</label>
+                                <input type="text" @bind="MicrosoftTenantId" @bind:event="oninput" placeholder="common (or your tenant ID)" />
+                            </div>
+                            <div class="form-group">
+                                <label>Redirect URI</label>
+                                <input type="text" @bind="MicrosoftRedirectUri" @bind:event="oninput" placeholder="https://localhost:5001/auth/microsoft/callback" />
+                            </div>
+                            <div class="card-actions">
+                                <button class="save-btn" @onclick="SaveMicrosoftCredentials">Save</button>
+                                @if (MicrosoftCredentials != null)
+                                {
+                                    <button class="delete-btn" @onclick="DeleteMicrosoftCredentials">Remove</button>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(MicrosoftMessage))
+                            {
+                                <div class="message @(MicrosoftMessage.Contains("Error") ? "error" : "success")">@MicrosoftMessage</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="settings-section">
+                <h2>Display</h2>
+                <p class="section-desc">Customize how tasks are displayed.</p>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>High Contrast Mode</h3>
+                        <p>Use black and white only for task panel text (easier to read)</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" checked="@HighContrastMode" @onchange="ToggleHighContrast" />
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="settings-section">
+                <h2>How to get credentials</h2>
+                <div class="help-cards">
+                    <div class="help-card">
+                        <h4>Google Calendar</h4>
+                        <ol>
+                            <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                            <li>Create a new project or select existing</li>
+                            <li>Enable the Google Calendar API</li>
+                            <li>Go to Credentials - Create Credentials - OAuth client ID</li>
+                            <li>Select "Web application"</li>
+                            <li>Add your redirect URI</li>
+                            <li>Copy the Client ID and Client Secret</li>
+                        </ol>
+                    </div>
+                    <div class="help-card">
+                        <h4>Microsoft / Teams</h4>
+                        <ol>
+                            <li>Go to <a href="https://portal.azure.com" target="_blank">Azure Portal</a></li>
+                            <li>Navigate to Azure Active Directory - App registrations</li>
+                            <li>Create a new registration</li>
+                            <li>Add redirect URI under Authentication</li>
+                            <li>Create a Client Secret under Certificates and secrets</li>
+                            <li>Copy the Application (client) ID and secret</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private bool IsAuthenticated => CurrentUserId > 0;
+    private int CurrentUserId { get; set; }
+    private string ExpandedProvider { get; set; } = "";
+
+    // Google
+    private CalendarCredentialsDto? GoogleCredentials { get; set; }
+    private string GoogleClientId { get; set; } = "";
+    private string GoogleClientSecret { get; set; } = "";
+    private string GoogleRedirectUri { get; set; } = "https://localhost:5001/auth/google/callback";
+    private string GoogleMessage { get; set; } = "";
+
+    // Microsoft
+    private CalendarCredentialsDto? MicrosoftCredentials { get; set; }
+    private string MicrosoftClientId { get; set; } = "";
+    private string MicrosoftClientSecret { get; set; } = "";
+    private string MicrosoftTenantId { get; set; } = "common";
+    private string MicrosoftRedirectUri { get; set; } = "https://localhost:5001/auth/microsoft/callback";
+    private string MicrosoftMessage { get; set; } = "";
+
+    // Display settings
+    private bool HighContrastMode { get; set; } = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckAuthAndLoadAsync();
+        }
+    }
+
+    private async Task CheckAuthAndLoadAsync()
+    {
+        try
+        {
+            var userIdStr = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "pfd_user_id");
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out var userId))
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            var user = await AuthService.GetUserByIdAsync(userId);
+            if (user == null)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            CurrentUserId = user.Id;
+            await LoadCredentials();
+            await LoadDisplaySettings();
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            Navigation.NavigateTo("/login");
+        }
+    }
+
+    private async Task LoadCredentials()
+    {
+        GoogleCredentials = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Google");
+        if (GoogleCredentials != null)
+        {
+            GoogleClientId = GoogleCredentials.ClientId ?? "";
+            GoogleClientSecret = GoogleCredentials.ClientSecret ?? "";
+            GoogleRedirectUri = GoogleCredentials.RedirectUri ?? "https://localhost:5001/auth/google/callback";
+        }
+
+        MicrosoftCredentials = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Microsoft");
+        if (MicrosoftCredentials != null)
+        {
+            MicrosoftClientId = MicrosoftCredentials.ClientId ?? "";
+            MicrosoftClientSecret = MicrosoftCredentials.ClientSecret ?? "";
+            MicrosoftTenantId = MicrosoftCredentials.TenantId ?? "common";
+            MicrosoftRedirectUri = MicrosoftCredentials.RedirectUri ?? "https://localhost:5001/auth/microsoft/callback";
+        }
+    }
+
+    private void ToggleGoogle()
+    {
+        ExpandedProvider = ExpandedProvider == "Google" ? "" : "Google";
+    }
+
+    private void ToggleMicrosoft()
+    {
+        ExpandedProvider = ExpandedProvider == "Microsoft" ? "" : "Microsoft";
+    }
+
+    private async Task SaveGoogleCredentials()
+    {
+        try
+        {
+            // Debug: Show what we're saving
+            if (string.IsNullOrEmpty(GoogleClientId))
+            {
+                GoogleMessage = "Error: Client ID is empty!";
+                return;
+            }
+            if (string.IsNullOrEmpty(GoogleClientSecret))
+            {
+                GoogleMessage = "Error: Client Secret is empty!";
+                return;
+            }
+
+            await CredentialsService.SaveCredentialsAsync(CurrentUserId, new CalendarCredentialsDto
+            {
+                Provider = "Google",
+                ClientId = GoogleClientId,
+                ClientSecret = GoogleClientSecret,
+                RedirectUri = GoogleRedirectUri
+            });
+            GoogleCredentials = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Google");
+            GoogleMessage = "Saved successfully!";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            GoogleMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteGoogleCredentials()
+    {
+        await CredentialsService.DeleteCredentialsAsync(CurrentUserId, "Google");
+        GoogleCredentials = null;
+        GoogleClientId = "";
+        GoogleClientSecret = "";
+        GoogleRedirectUri = "https://localhost:5001/auth/google/callback";
+        GoogleMessage = "Removed successfully!";
+    }
+
+    private async Task SaveMicrosoftCredentials()
+    {
+        try
+        {
+            await CredentialsService.SaveCredentialsAsync(CurrentUserId, new CalendarCredentialsDto
+            {
+                Provider = "Microsoft",
+                ClientId = MicrosoftClientId,
+                ClientSecret = MicrosoftClientSecret,
+                TenantId = MicrosoftTenantId,
+                RedirectUri = MicrosoftRedirectUri
+            });
+            MicrosoftCredentials = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Microsoft");
+            MicrosoftMessage = "Saved successfully!";
+        }
+        catch (Exception ex)
+        {
+            MicrosoftMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteMicrosoftCredentials()
+    {
+        await CredentialsService.DeleteCredentialsAsync(CurrentUserId, "Microsoft");
+        MicrosoftCredentials = null;
+        MicrosoftClientId = "";
+        MicrosoftClientSecret = "";
+        MicrosoftTenantId = "common";
+        MicrosoftRedirectUri = "https://localhost:5001/auth/microsoft/callback";
+        MicrosoftMessage = "Removed successfully!";
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/planner");
+    private void GoToLogin() => Navigation.NavigateTo("/login");
+
+    private async Task LoadDisplaySettings()
+    {
+        try
+        {
+            HighContrastMode = await JSRuntime.InvokeAsync<bool>("settingsInterop.getHighContrast");
+        }
+        catch
+        {
+            HighContrastMode = false;
+        }
+    }
+
+    private async Task ToggleHighContrast(ChangeEventArgs e)
+    {
+        HighContrastMode = (bool)(e.Value ?? false);
+        await JSRuntime.InvokeVoidAsync("settingsInterop.setHighContrast", HighContrastMode);
+    }
+}

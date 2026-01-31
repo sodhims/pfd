@@ -1,14 +1,20 @@
-@page "/"
 @page "/planner"
 @using PFD.Shared.Interfaces
 @using PFD.Shared.Models
+@using PFD.Services
+@using Microsoft.Extensions.DependencyInjection
 @inject ITaskService TaskService
 @inject IAnalysisService AnalysisService
+@inject IAuthService AuthService
+@inject ICalendarCredentialsService CredentialsService
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
 
-<div class="planner-container theme-@CurrentTheme">
+<div class="planner-container theme-@CurrentTheme @(UseLargeText ? "large-text" : "") @(HighContrastMode ? "high-contrast" : "")">
     <!-- Left Panel: Calendar + Settings -->
     <div class="left-panel">
         <!-- Calendar -->
@@ -52,7 +58,21 @@
                     <option value="dark">Dark</option>
                     <option value="light">Light</option>
                     <option value="preppy">Preppy</option>
+                    <option value="tropical">Tropical</option>
+                    <option value="nordic">Nordic</option>
+                    <option value="pinkish">Pinkish</option>
+                    <option value="bigly">Bigly</option>
+                    <option value="ughly">Ughly</option>
+                    <option value="vampire">Vampire</option>
+                    <option value="greek">Greek</option>
                 </select>
+            </div>
+            <div class="setting-group">
+                <label>Text Size</label>
+                <div class="view-toggle">
+                    <button class="@(!UseLargeText ? "active" : "")" @onclick="() => SetLargeText(false)">Normal</button>
+                    <button class="@(UseLargeText ? "active" : "")" @onclick="() => SetLargeText(true)">Large</button>
+                </div>
             </div>
             <div class="setting-group">
                 <label>AI Assistant</label>
@@ -61,11 +81,66 @@
                     @(ShowAiPanel ? "Hide Insights" : "Show Insights")
                 </button>
             </div>
+            @if (HasGoogleCredentials || HasMicrosoftCredentials)
+            {
+                <div class="setting-group">
+                    <label>External Calendars</label>
+                    <div class="external-calendars">
+                        @if (HasGoogleCredentials && GoogleCalendarService != null)
+                        {
+                            <div class="calendar-connection">
+                                <span class="cal-icon google-icon">G</span>
+                                <span class="cal-name">Google</span>
+                                @if (IsGoogleConnected)
+                                {
+                                    <span class="status-badge connected">✓</span>
+                                    <button class="disconnect-small-btn" @onclick="DisconnectGoogle">×</button>
+                                }
+                                else
+                                {
+                                    <button class="connect-small-btn" @onclick="ConnectGoogle">Connect</button>
+                                }
+                            </div>
+                        }
+                        @if (HasMicrosoftCredentials && MicrosoftCalendarService != null)
+                        {
+                            <div class="calendar-connection">
+                                <span class="cal-icon microsoft-icon">M</span>
+                                <span class="cal-name">Teams</span>
+                                @if (IsMicrosoftConnected)
+                                {
+                                    <span class="status-badge connected">✓</span>
+                                    <button class="disconnect-small-btn" @onclick="DisconnectMicrosoft">×</button>
+                                }
+                                else
+                                {
+                                    <button class="connect-small-btn" @onclick="ConnectMicrosoft">Connect</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(ImportMessage))
+                    {
+                        <div class="import-message">@ImportMessage</div>
+                    }
+                </div>
+            }
+            <div class="setting-group">
+                <label>Calendars</label>
+                <button class="settings-link-btn" @onclick="GoToSettings">
+                    ⚙ Manage Credentials
+                </button>
+            </div>
+            <div class="setting-group user-section">
+                <label>Signed in as</label>
+                <span class="username">@CurrentUsername</span>
+                <button class="logout-btn" @onclick="Logout">Logout</button>
+            </div>
         </div>
     </div>
 
-    <!-- Right Panel: Tasks -->
-    <div class="right-panel">
+    <!-- Center Panel: Tasks -->
+    <div class="center-panel">
         <!-- Header -->
         <div class="task-header">
             <span class="header-icon">&#128197;</span>
@@ -77,24 +152,24 @@
             <input type="text" @bind="NewTaskText" @bind:event="oninput"
                    @onkeydown="HandleKeyDown" placeholder="Enter a new task..." />
             <input type="text" @bind="NewTaskTimeText" @bind:event="oninput" class="time-input"
-                   placeholder="HH:mm" title="Schedule time (optional, e.g. 09:00)" />
+                   placeholder="9:00" pattern="[0-9]{1,2}:[0-9]{2}" title="Time (e.g. 9:00, 14:30)" />
             <button @onclick="AddTask">Add</button>
         </div>
 
-        <!-- Overdue Section -->
+        <!-- Waiting Section (previously Overdue) -->
         @if (OverdueTasks.Any() && IsDailyView)
         {
-            <div class="overdue-section">
-                <div class="overdue-header">
-                    <span class="overdue-icon">&#9888;</span>
-                    <span>Overdue (@OverdueTasks.Count)</span>
+            <div class="waiting-section">
+                <div class="waiting-header">
+                    <span class="waiting-icon">&#9203;</span>
+                    <span>Waiting (@OverdueTasks.Count)</span>
                 </div>
                 @foreach (var task in OverdueTasks)
                 {
-                    <div class="task-row overdue">
+                    <div class="task-row waiting">
                         <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
                         <span class="task-title">@task.Title</span>
-                        <span class="task-date overdue-date">@task.TaskDate.ToString("M/d")</span>
+                        <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
                         <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
                         <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
                     </div>
@@ -102,8 +177,146 @@
             </div>
         }
 
-        <!-- Task List -->
-        <div class="task-list">
+        <!-- Calendar Tabs - Always show -->
+        <div class="calendar-tabs-container">
+            <div class="tab-bar">
+                <button class="tab @(ActiveCalendarTab == CalendarSource.Integrated ? "active" : "")"
+                        @onclick="() => SetCalendarTab(CalendarSource.Integrated)">
+                    <span class="tab-icon">📋</span> All Tasks
+                    @if (TotalTaskCount > 0)
+                    {
+                        <span class="tab-count">@TotalTaskCount</span>
+                    }
+                </button>
+                <button class="tab google-tab @(ActiveCalendarTab == CalendarSource.Google ? "active" : "") @(IsGoogleConnected ? "" : "disconnected")"
+                        @onclick="() => SetCalendarTab(CalendarSource.Google)">
+                    <span class="tab-icon google-tab-icon">G</span> Google
+                    @if (IsGoogleConnected && GoogleEventCount > 0)
+                    {
+                        <span class="tab-count">@GoogleEventCount</span>
+                    }
+                    else if (HasGoogleCredentials && !IsGoogleConnected)
+                    {
+                        <span class="tab-status" title="Configured - click to connect">⚙</span>
+                    }
+                    else if (!HasGoogleCredentials)
+                    {
+                        <span class="tab-status">○</span>
+                    }
+                </button>
+                <button class="tab microsoft-tab @(ActiveCalendarTab == CalendarSource.Microsoft ? "active" : "") @(IsMicrosoftConnected ? "" : "disconnected")"
+                        @onclick="() => SetCalendarTab(CalendarSource.Microsoft)">
+                    <span class="tab-icon microsoft-tab-icon">M</span> Teams
+                    @if (IsMicrosoftConnected && MicrosoftEventCount > 0)
+                    {
+                        <span class="tab-count">@MicrosoftEventCount</span>
+                    }
+                    else if (HasMicrosoftCredentials && !IsMicrosoftConnected)
+                    {
+                        <span class="tab-status" title="Configured - click to connect">⚙</span>
+                    }
+                    else if (!HasMicrosoftCredentials)
+                    {
+                        <span class="tab-status">○</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        <!-- External Calendar Events (when on Google or Teams tab) -->
+        @if (ActiveCalendarTab == CalendarSource.Google || ActiveCalendarTab == CalendarSource.Microsoft)
+        {
+            @if ((ActiveCalendarTab == CalendarSource.Google && !IsGoogleConnected) ||
+                 (ActiveCalendarTab == CalendarSource.Microsoft && !IsMicrosoftConnected))
+            {
+                @if ((ActiveCalendarTab == CalendarSource.Google && HasGoogleCredentials) ||
+                     (ActiveCalendarTab == CalendarSource.Microsoft && HasMicrosoftCredentials))
+                {
+                    <!-- Credentials configured, show connect button -->
+                    <div class="connect-prompt">
+                        <div class="connect-icon">@(ActiveCalendarTab == CalendarSource.Google ? "🔴" : "🔵")</div>
+                        <h3>@(ActiveCalendarTab == CalendarSource.Google ? "Google Calendar" : "Microsoft Teams") - Ready to Connect</h3>
+                        <p>Your credentials are configured. Click below to authorize access to your calendar.</p>
+                        @if (ActiveCalendarTab == CalendarSource.Google)
+                        {
+                            <button class="connect-btn" @onclick="ConnectGoogle">
+                                Connect Google Calendar
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="connect-btn" @onclick="ConnectMicrosoft">
+                                Connect Microsoft Teams
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <!-- No credentials, prompt to configure -->
+                    <div class="connect-prompt">
+                        <div class="connect-icon">@(ActiveCalendarTab == CalendarSource.Google ? "🔴" : "🔵")</div>
+                        <h3>@(ActiveCalendarTab == CalendarSource.Google ? "Google Calendar" : "Microsoft Teams") not configured</h3>
+                        <p>Configure your credentials in Settings to connect this calendar.</p>
+                        <button class="connect-btn" @onclick="GoToSettings">
+                            ⚙ Go to Settings
+                        </button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="external-events-list">
+                    @if (IsLoadingExternalEvents)
+                    {
+                        <div class="loading-events">Loading events...</div>
+                    }
+                    else if (!ExternalEvents.Any())
+                    {
+                        <div class="no-events">No events for this period</div>
+                    }
+                    else
+                    {
+                        @foreach (var evt in ExternalEvents)
+                        {
+                            <div class="external-event-row @(evt.IsImported ? "imported" : "")">
+                                <div class="event-details">
+                                    <span class="event-title">@evt.Title</span>
+                                    <span class="event-time">
+                                        @(evt.IsAllDay ? "All day" : evt.Start.ToString("h:mm tt"))
+                                    </span>
+                                    @if (!string.IsNullOrEmpty(evt.Location))
+                                    {
+                                        <span class="event-location">📍 @evt.Location</span>
+                                    }
+                                </div>
+                                <div class="event-actions">
+                                    @if (evt.IsImported)
+                                    {
+                                        <span class="imported-label">✓ Added</span>
+                                    }
+                                    else
+                                    {
+                                        <button class="add-to-integrated-btn" @onclick="() => ImportSingleEvent(evt)">
+                                            → Add to All
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (ExternalEvents.Any(e => !e.IsImported))
+                        {
+                            <button class="import-all-btn" @onclick="ImportAllExternalEvents">
+                                Import All (@ExternalEvents.Count(e => !e.IsImported) events)
+                            </button>
+                        }
+                    }
+                </div>
+            }
+        }
+
+        <!-- Task List (show on All Tasks tab) -->
+        <div class="task-list" style="@(ActiveCalendarTab != CalendarSource.Integrated ? "display:none" : "")">
             @if (IsDailyView)
             {
                 @if (ScheduledTasks.Any())
@@ -115,9 +328,10 @@
                         </div>
                         @foreach (var task in ScheduledTasks)
                         {
-                            <div class="task-row scheduled @(task.IsCompleted ? "completed" : "")">
-                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
-                                <span class="task-time" @onclick="() => OpenTimeEditor(task)">
+                            var isPast = IsTaskInPast(task);
+                            <div class="task-row scheduled @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
+                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
+                                <span class="task-time @(isPast ? "readonly" : "")" @onclick="() => OpenTimeEditor(task)">
                                     @FormatTime(task.ScheduledTime)
                                 </span>
                                 @if (EditingTaskId == task.Id)
@@ -134,8 +348,11 @@
                                 {
                                     <span class="task-duration">@task.DurationMinutes min</span>
                                 }
-                                <button class="clear-time-btn" title="Remove time" @onclick="() => ClearTaskTime(task)">&#10006;</button>
-                                <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                                @if (!isPast)
+                                {
+                                    <button class="clear-time-btn" title="Remove time" @onclick="() => ClearTaskTime(task)">&#10006;</button>
+                                    <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                                }
                             </div>
                         }
                     </div>
@@ -150,8 +367,9 @@
                         </div>
                         @foreach (var task in AllDayTasks)
                         {
-                            <div class="task-row @(task.IsCompleted ? "completed" : "")">
-                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                            var isPast = IsTaskInPast(task);
+                            <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
+                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
                                 @if (EditingTaskId == task.Id)
                                 {
                                     <input type="text" class="task-edit" @bind="EditingTaskText"
@@ -162,8 +380,11 @@
                                     <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
                                           @ondblclick="() => StartEditTask(task)">@task.Title</span>
                                 }
-                                <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">&#128337;</button>
-                                <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                                @if (!isPast)
+                                {
+                                    <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">&#128337;</button>
+                                    <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                                }
                             </div>
                         }
                     </div>
@@ -173,8 +394,9 @@
             {
                 @foreach (var task in WeeklyTasks)
                 {
-                    <div class="task-row @(task.IsCompleted ? "completed" : "")">
-                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" />
+                    var isPast = IsTaskInPast(task);
+                    <div class="task-row @(task.IsCompleted ? "completed" : "") @(isPast ? "past" : "")">
+                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" disabled="@isPast" />
                         @if (EditingTaskId == task.Id)
                         {
                             <input type="text" class="task-edit" @bind="EditingTaskText"
@@ -193,7 +415,10 @@
                             <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Thursday ? "active" : "")">T</span>
                             <span class="day-indicator @(task.TaskDate.DayOfWeek == DayOfWeek.Friday ? "active" : "")">F</span>
                         </div>
-                        <button class="delete-btn" @onclick="() => DeleteWeeklyTask(task)">&#128465;</button>
+                        @if (!isPast)
+                        {
+                            <button class="delete-btn" @onclick="() => DeleteWeeklyTask(task)">&#128465;</button>
+                        }
                     </div>
                 }
             }
@@ -203,7 +428,109 @@
                 <div class="no-tasks">No tasks for this @(IsDailyView ? "day" : "week"). Add one above!</div>
             }
         </div>
+
     </div>
+
+    <!-- Day Roller (draggable multi-day scroller) - Always visible in daily view -->
+    @if (IsDailyView)
+    {
+        <div class="day-roller-wrapper">
+            <!-- Day Navigation Roller -->
+            <div class="day-roller">
+                <button class="day-nav-btn up" @onclick="PrevDay" title="Previous Day">&#9650;</button>
+
+                <div class="day-roller-track"
+                     @onmousedown="OnRollerMouseDown"
+                     @onmousemove="OnRollerMouseMove"
+                     @onmouseup="OnRollerMouseUp"
+                     @onmouseleave="OnRollerMouseUp"
+                     @ontouchstart="OnRollerTouchStart"
+                     @ontouchmove="OnRollerTouchMove"
+                     @ontouchend="OnRollerTouchEnd"
+                     @onwheel="OnRollerWheel"
+                     style="transform: translateY(@(rollerOffset)px);">
+                    @for (int offset = -7; offset <= 7; offset++)
+                    {
+                        var dayOffset = offset;
+                        var displayDate = SelectedDate.AddDays(dayOffset);
+                        var isToday = displayDate.Date == DateTime.Today;
+                        var isSelected = dayOffset == 0;
+                        var isWeekend = displayDate.DayOfWeek == DayOfWeek.Saturday || displayDate.DayOfWeek == DayOfWeek.Sunday;
+                        var taskCount = GetTaskCountForDate(displayDate);
+                        var opacity = 1.0 - (Math.Abs(dayOffset) * 0.15);
+
+                        <div class="day-slot @(isToday ? "today" : "") @(isSelected ? "selected" : "") @(isWeekend ? "weekend" : "")"
+                             style="opacity: @opacity.ToString("F2");">
+                            <span class="day-name">@displayDate.ToString("ddd")</span>
+                            <span class="day-num">@displayDate.Day</span>
+                            <span class="day-month">@displayDate.ToString("MMM")</span>
+                            @if (taskCount > 0)
+                            {
+                                <span class="day-task-count">@taskCount</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <button class="day-nav-btn down" @onclick="NextDay" title="Next Day">&#9660;</button>
+
+                <div class="roller-actions">
+                    <button class="roller-today-btn" @onclick="GoToToday" title="Jump to Today">Today</button>
+                </div>
+            </div>
+
+            <!-- Time & Tasks Panel - Always visible -->
+            <div class="time-tasks-panel">
+                <div class="time-panel-body">
+                    <div class="time-column" @ref="timeRollerRef" @onscroll="OnTimeRollerScroll">
+                        @for (int hour = WorkingHoursStart; hour <= WorkingHoursEnd; hour++)
+                        {
+                            var currentHour = hour;
+                            var isCurrentHour = DateTime.Now.Hour == currentHour && SelectedDate.Date == DateTime.Today;
+                            var hasItems = GetTasksAtHour(currentHour).Any() || GetGoogleEventsAtHour(currentHour).Any();
+                            var isNonWorking = hour < 8 || hour >= 18;
+
+                            <div class="time-slot @(isCurrentHour ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "")">
+                                <span class="hour-text">@FormatHour(currentHour)</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="tasks-column" @ref="syncedTasksRef" @onscroll="OnSyncedTasksScroll">
+                        @for (int hour = WorkingHoursStart; hour <= WorkingHoursEnd; hour++)
+                        {
+                            var currentHour = hour;
+                            var tasksAtHour = GetTasksAtHour(currentHour);
+                            var eventsAtHour = GetGoogleEventsAtHour(currentHour);
+                            var isCurrentHour = DateTime.Now.Hour == currentHour && SelectedDate.Date == DateTime.Today;
+                            var hasItems = tasksAtHour.Any() || eventsAtHour.Any();
+                            var isNonWorking = hour < 8 || hour >= 18;
+
+                            <div class="task-slot @(isCurrentHour ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "")">
+                                @foreach (var task in tasksAtHour)
+                                {
+                                    <div class="slot-task @(task.IsCompleted ? "done" : "") @(EditingTaskId == task.Id ? "active" : "")"
+                                         @onclick="() => SelectTaskFromSchedule(task)">
+                                        <span class="t-time">@FormatTime(task.ScheduledTime)</span>
+                                        <span class="t-title">@task.Title</span>
+                                        <span class="t-src pfd">P</span>
+                                    </div>
+                                }
+                                @foreach (var evt in eventsAtHour)
+                                {
+                                    <div class="slot-task google">
+                                        <span class="t-time">@evt.Start.ToString("h:mm")</span>
+                                        <span class="t-title">@evt.Title</span>
+                                        <span class="t-src google">G</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 
     <!-- Time Editor Modal -->
     @if (EditingTimeTask != null)
@@ -328,6 +655,18 @@
     private List<DailyTask> AllDayTasks => Tasks.Where(t => t.IsAllDay || !t.ScheduledTime.HasValue).ToList();
 
     private int? EditingTaskId { get; set; }
+
+    // Time roller scroll sync
+    private ElementReference timeRollerRef;
+    private ElementReference syncedTasksRef;
+    private bool isSyncingScroll = false;
+
+    // Day roller drag state
+    private bool isDragging = false;
+    private double dragStartY = 0;
+    private double rollerOffset = 0;
+    private double totalDragDistance = 0;
+    private const double SlotHeight = 55;
     private string EditingTaskText { get; set; } = "";
     private DailyTask? EditingTask { get; set; }
 
@@ -343,11 +682,171 @@
     private List<string> AiSuggestions { get; set; } = new();
     private List<PrioritizedTask> PrioritizedTasks { get; set; } = new();
 
-    protected override async Task OnInitializedAsync()
+    // Settings & Auth
+    private int CurrentUserId { get; set; } = 0;
+    private string CurrentUsername { get; set; } = "";
+    private bool SettingsLoaded { get; set; } = false;
+    private bool UseLargeText { get; set; } = false;
+    private bool HighContrastMode { get; set; } = false;
+    private int WorkingHoursStart { get; set; } = 6;  // 6 AM
+    private int WorkingHoursEnd { get; set; } = 20;   // 8 PM
+
+    // External Calendars
+    private bool IsGoogleConnected { get; set; } = false;
+    private bool IsMicrosoftConnected { get; set; } = false;
+    private bool IsImporting { get; set; } = false;
+    private string ImportMessage { get; set; } = "";
+    private CalendarSource ActiveCalendarTab { get; set; } = CalendarSource.Integrated;
+    private List<ExternalCalendarEvent> ExternalEvents { get; set; } = new();
+    private bool IsLoadingExternalEvents { get; set; } = false;
+    private int GoogleEventCount { get; set; } = 0;
+    private int MicrosoftEventCount { get; set; } = 0;
+    private int TotalTaskCount => Tasks.Count + WeeklyTasks.Count;
+
+    // Calendar services (created dynamically from stored credentials)
+    private IGoogleCalendarService? GoogleCalendarService { get; set; }
+    private MicrosoftCalendarService? MicrosoftCalendarService { get; set; }
+    private ICalendarSyncService? CalendarSyncService { get; set; }
+
+    // Credentials info
+    private bool HasGoogleCredentials { get; set; } = false;
+    private bool HasMicrosoftCredentials { get; set; } = false;
+
+    protected override void OnInitialized()
     {
         BuildCalendar();
-        await LoadTasksAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckAuthAndLoadAsync();
+        }
+    }
+
+    private async Task CheckAuthAndLoadAsync()
+    {
+        try
+        {
+            // Check if user is logged in
+            var userIdStr = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "pfd_user_id");
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out var userId))
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            var user = await AuthService.GetUserByIdAsync(userId);
+            if (user == null)
+            {
+                await Logout();
+                return;
+            }
+
+            CurrentUserId = user.Id;
+            CurrentUsername = user.DisplayName ?? user.Username;
+            CurrentTheme = user.Theme;
+            IsDailyView = user.IsDailyView;
+            UseLargeText = user.UseLargeText;
+
+            // Load high contrast from localStorage
+            try
+            {
+                HighContrastMode = await JSRuntime.InvokeAsync<bool>("settingsInterop.getHighContrast");
+            }
+            catch { HighContrastMode = false; }
+
+            SettingsLoaded = true;
+
+            // Load calendar credentials and create services dynamically
+            await LoadCalendarServicesFromCredentialsAsync();
+
+            // Check external calendar connections
+            if (GoogleCalendarService != null)
+            {
+                IsGoogleConnected = await GoogleCalendarService.IsConnectedAsync(CurrentUserId);
+            }
+            if (MicrosoftCalendarService != null)
+            {
+                IsMicrosoftConnected = await MicrosoftCalendarService.IsConnectedAsync(CurrentUserId);
+            }
+
+            // Load event counts for tabs
+            await LoadExternalEventCounts();
+
+            await LoadTasksAsync();
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            Navigation.NavigateTo("/login");
+        }
+    }
+
+    private async Task LoadCalendarServicesFromCredentialsAsync()
+    {
+        try
+        {
+            // Load Google credentials
+            var googleCreds = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Google");
+            if (googleCreds != null && !string.IsNullOrEmpty(googleCreds.ClientId) && !string.IsNullOrEmpty(googleCreds.ClientSecret))
+            {
+                HasGoogleCredentials = true;
+                GoogleCalendarService = new GoogleCalendarService(
+                    TaskService,
+                    googleCreds.ClientId,
+                    googleCreds.ClientSecret,
+                    googleCreds.RedirectUri ?? "https://localhost:5001/auth/google/callback"
+                );
+            }
+
+            // Load Microsoft credentials
+            var msCreds = await CredentialsService.GetCredentialsAsync(CurrentUserId, "Microsoft");
+            if (msCreds != null && !string.IsNullOrEmpty(msCreds.ClientId) && !string.IsNullOrEmpty(msCreds.ClientSecret))
+            {
+                HasMicrosoftCredentials = true;
+                MicrosoftCalendarService = new MicrosoftCalendarService(
+                    msCreds.ClientId,
+                    msCreds.ClientSecret,
+                    msCreds.TenantId ?? "common",
+                    msCreds.RedirectUri ?? "https://localhost:5001/auth/microsoft/callback"
+                );
+            }
+
+            // Create CalendarSyncService if any calendar is configured
+            if (GoogleCalendarService != null || MicrosoftCalendarService != null)
+            {
+                var syncService = new CalendarSyncService(TaskService);
+                if (GoogleCalendarService is IExternalCalendarService googleExtSvc)
+                {
+                    syncService.RegisterCalendarService(googleExtSvc);
+                }
+                if (MicrosoftCalendarService != null)
+                {
+                    syncService.RegisterCalendarService(MicrosoftCalendarService);
+                }
+                CalendarSyncService = syncService;
+            }
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Error loading calendar credentials: {ex.Message}";
+        }
+    }
+
+    private async Task Logout()
+    {
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "pfd_user_id");
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "pfd_username");
+        Navigation.NavigateTo("/login");
+    }
+
+    private void GoToSettings()
+    {
+        Navigation.NavigateTo("/settings");
+    }
+
 
     private void BuildCalendar()
     {
@@ -380,10 +879,12 @@
 
     private async Task LoadTasksAsync()
     {
+        if (CurrentUserId == 0) return;
+
         // Load overdue tasks (only for today's view)
         if (SelectedDate.Date == DateTime.Today)
         {
-            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today);
+            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
         }
         else
         {
@@ -392,7 +893,7 @@
 
         if (IsDailyView)
         {
-            Tasks = await TaskService.GetTasksForDateAsync(SelectedDate);
+            Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
             WeeklyTasks.Clear();
         }
         else
@@ -400,7 +901,7 @@
             var dayOfWeek = (int)SelectedDate.DayOfWeek;
             var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
             var startOfWeek = SelectedDate.AddDays(-daysToMonday);
-            WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4));
+            WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4), CurrentUserId);
             Tasks.Clear();
         }
         StateHasChanged();
@@ -428,10 +929,11 @@
         BuildCalendar();
     }
 
-    private void SetView(bool daily)
+    private async Task SetView(bool daily)
     {
         IsDailyView = daily;
-        _ = LoadTasksAsync();
+        await LoadTasksAsync();
+        await SaveSettingsAsync();
     }
 
     private string GetHeaderText()
@@ -462,7 +964,7 @@
 
     private async Task AddTask()
     {
-        if (string.IsNullOrWhiteSpace(NewTaskText)) return;
+        if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
         var task = new DailyTask
         {
@@ -470,7 +972,8 @@
             TaskDate = SelectedDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
-            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText)
+            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText),
+            UserId = CurrentUserId
         };
 
         // Parse scheduled time if provided
@@ -488,48 +991,56 @@
 
     private async Task ToggleTask(DailyTask task)
     {
-        await TaskService.ToggleCompletionAsync(task.Id);
+        await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task DeleteTask(DailyTask task)
     {
-        await TaskService.DeleteTaskAsync(task.Id);
+        await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task ToggleWeeklyTask(DailyTask task)
     {
-        await TaskService.ToggleCompletionAsync(task.Id);
+        await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task DeleteWeeklyTask(DailyTask task)
     {
-        await TaskService.DeleteTaskAsync(task.Id);
+        await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task ToggleOverdueTask(DailyTask task)
     {
-        await TaskService.ToggleCompletionAsync(task.Id);
+        await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task DeleteOverdueTask(DailyTask task)
     {
-        await TaskService.DeleteTaskAsync(task.Id);
+        await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private async Task MoveToToday(DailyTask task)
     {
-        await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today);
+        await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, CurrentUserId);
         await LoadTasksAsync();
+    }
+
+    private bool IsTaskInPast(DailyTask task)
+    {
+        return task.TaskDate.Date < DateTime.Today;
     }
 
     private void StartEditTask(DailyTask task)
     {
+        // Don't allow editing past tasks
+        if (IsTaskInPast(task)) return;
+
         EditingTaskId = task.Id;
         EditingTaskText = task.Title;
         EditingTask = task;
@@ -537,6 +1048,20 @@
 
     private void StartEditWeeklyTask(DailyTask task)
     {
+        // Don't allow editing past tasks
+        if (IsTaskInPast(task)) return;
+
+        EditingTaskId = task.Id;
+        EditingTaskText = task.Title;
+        EditingTask = task;
+    }
+
+    private void SelectTaskFromSchedule(DailyTask task)
+    {
+        // Don't allow editing past tasks
+        if (IsTaskInPast(task)) return;
+
+        // Set the task as editing - this highlights it in the task list and enables editing
         EditingTaskId = task.Id;
         EditingTaskText = task.Title;
         EditingTask = task;
@@ -577,9 +1102,31 @@
         await HandleEditKeyDown(e);
     }
 
-    private void ChangeTheme(ChangeEventArgs e)
+    private async Task ChangeTheme(ChangeEventArgs e)
     {
         CurrentTheme = e.Value?.ToString() ?? "teal";
+        await SaveSettingsAsync();
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        if (!SettingsLoaded || CurrentUserId == 0) return;
+
+        try
+        {
+            // Save to user profile in database
+            await AuthService.UpdateUserSettingsAsync(CurrentUserId, CurrentTheme, IsDailyView, UseLargeText);
+        }
+        catch (Exception)
+        {
+            // Silently fail
+        }
+    }
+
+    private async Task SetLargeText(bool useLargeText)
+    {
+        UseLargeText = useLargeText;
+        await SaveSettingsAsync();
     }
 
     private void ToggleAiPanel()
@@ -589,6 +1136,152 @@
         {
             _ = LoadAiInsightsAsync();
         }
+    }
+
+    // Simple day navigation
+    private async Task PrevDay()
+    {
+        SelectedDate = SelectedDate.AddDays(-1);
+        await LoadTasksAsync();
+    }
+
+    private async Task NextDay()
+    {
+        SelectedDate = SelectedDate.AddDays(1);
+        await LoadTasksAsync();
+    }
+
+    private async Task GoToToday()
+    {
+        SelectedDate = DateTime.Today;
+        await LoadTasksAsync();
+    }
+
+    // Day roller drag handlers
+    private void OnRollerMouseDown(MouseEventArgs e)
+    {
+        isDragging = true;
+        dragStartY = e.ClientY;
+        totalDragDistance = 0;
+    }
+
+    private async Task OnRollerMouseMove(MouseEventArgs e)
+    {
+        if (!isDragging) return;
+
+        var delta = e.ClientY - dragStartY;
+        totalDragDistance += Math.Abs(delta);
+        rollerOffset += delta;
+        dragStartY = e.ClientY;
+
+        // Check if we've dragged enough to change day
+        if (Math.Abs(rollerOffset) >= SlotHeight)
+        {
+            var dayChange = rollerOffset > 0 ? -1 : 1;
+            SelectedDate = SelectedDate.AddDays(dayChange);
+            rollerOffset = 0;
+            await LoadTasksAsync();
+        }
+
+        StateHasChanged();
+    }
+
+    private void OnRollerMouseUp(MouseEventArgs e)
+    {
+        isDragging = false;
+        rollerOffset = 0;
+        StateHasChanged();
+    }
+
+    private void OnRollerTouchStart(TouchEventArgs e)
+    {
+        if (e.Touches.Length > 0)
+        {
+            isDragging = true;
+            dragStartY = e.Touches[0].ClientY;
+            totalDragDistance = 0;
+        }
+    }
+
+    private async Task OnRollerTouchMove(TouchEventArgs e)
+    {
+        if (!isDragging || e.Touches.Length == 0) return;
+
+        var delta = e.Touches[0].ClientY - dragStartY;
+        totalDragDistance += Math.Abs(delta);
+        rollerOffset += delta;
+        dragStartY = e.Touches[0].ClientY;
+
+        if (Math.Abs(rollerOffset) >= SlotHeight)
+        {
+            var dayChange = rollerOffset > 0 ? -1 : 1;
+            SelectedDate = SelectedDate.AddDays(dayChange);
+            rollerOffset = 0;
+            await LoadTasksAsync();
+        }
+
+        StateHasChanged();
+    }
+
+    private void OnRollerTouchEnd(TouchEventArgs e)
+    {
+        isDragging = false;
+        rollerOffset = 0;
+        StateHasChanged();
+    }
+
+    private async Task OnRollerWheel(WheelEventArgs e)
+    {
+        // Scroll wheel changes days
+        var dayChange = e.DeltaY > 0 ? 1 : -1;
+        SelectedDate = SelectedDate.AddDays(dayChange);
+        await LoadTasksAsync();
+    }
+
+    private async Task OnTimeRollerScroll()
+    {
+        if (isSyncingScroll) return;
+        isSyncingScroll = true;
+        await JSRuntime.InvokeVoidAsync("syncScroll", timeRollerRef, syncedTasksRef);
+        isSyncingScroll = false;
+    }
+
+    private async Task OnSyncedTasksScroll()
+    {
+        if (isSyncingScroll) return;
+        isSyncingScroll = true;
+        await JSRuntime.InvokeVoidAsync("syncScroll", syncedTasksRef, timeRollerRef);
+        isSyncingScroll = false;
+    }
+
+    private async Task ScrollToNow()
+    {
+        var currentHour = DateTime.Now.Hour;
+        await JSRuntime.InvokeVoidAsync("scrollToHour", timeRollerRef, syncedTasksRef, currentHour);
+    }
+
+    private async Task ScrollToHour(int hour)
+    {
+        await JSRuntime.InvokeVoidAsync("scrollToHour", timeRollerRef, syncedTasksRef, hour);
+    }
+
+
+    private int GetTaskCountForDate(DateTime date)
+    {
+        // This is a simplified count - could be enhanced to query actual data
+        if (date.Date == SelectedDate.Date)
+        {
+            return Tasks.Count;
+        }
+        return 0; // Would need to load from DB for other dates
+    }
+
+    private string FormatHour(int hour)
+    {
+        if (hour == 0) return "12a";
+        if (hour < 12) return $"{hour}a";
+        if (hour == 12) return "12p";
+        return $"{hour - 12}p";
     }
 
     private async Task RefreshAiInsights()
@@ -610,8 +1303,8 @@
 
         try
         {
-            var recentTasks = await TaskService.GetRecentTasksAsync(30);
-            var overdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today);
+            var recentTasks = await TaskService.GetRecentTasksAsync(CurrentUserId, 30);
+            var overdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
             var todayTasks = Tasks.ToList();
 
             // Get insights
@@ -678,6 +1371,9 @@
 
     private void OpenTimeEditor(DailyTask task)
     {
+        // Don't allow editing past tasks
+        if (IsTaskInPast(task)) return;
+
         EditingTimeTask = task;
         EditingTimeValue = task.ScheduledTime.HasValue
             ? task.ScheduledTime.Value.ToString(@"hh\:mm")
@@ -700,14 +1396,14 @@
             time = parsed;
         }
 
-        await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, EditingDuration);
+        await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
         EditingTimeTask = null;
         await LoadTasksAsync();
     }
 
     private async Task ClearTaskTime(DailyTask task)
     {
-        await TaskService.ScheduleTaskTimeAsync(task.Id, null, 30);
+        await TaskService.ScheduleTaskTimeAsync(task.Id, null, CurrentUserId, 30);
         await LoadTasksAsync();
     }
 
@@ -722,5 +1418,244 @@
         public DailyTask Task { get; set; } = null!;
         public int PriorityScore { get; set; }
         public string Reasoning { get; set; } = "";
+    }
+
+    // Google Calendar methods
+    private async Task ConnectGoogle()
+    {
+        if (GoogleCalendarService == null || CurrentUserId == 0) return;
+
+        try
+        {
+            var authUrl = await GoogleCalendarService.GetAuthorizationUrlAsync(CurrentUserId);
+            await JSRuntime.InvokeVoidAsync("open", authUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DisconnectGoogle()
+    {
+        if (GoogleCalendarService == null || CurrentUserId == 0) return;
+
+        await GoogleCalendarService.DisconnectAsync(CurrentUserId);
+        IsGoogleConnected = false;
+        ImportMessage = "";
+    }
+
+    private async Task ImportGoogleEvents()
+    {
+        if (GoogleCalendarService == null || CurrentUserId == 0) return;
+
+        IsImporting = true;
+        ImportMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            // Import events for the next 30 days
+            var startDate = DateTime.Today;
+            var endDate = DateTime.Today.AddDays(30);
+
+            var count = await GoogleCalendarService.ImportEventsAsTasksAsync(CurrentUserId, startDate, endDate);
+            ImportMessage = count > 0
+                ? $"Imported {count} event(s)!"
+                : "No new events to import.";
+
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsImporting = false;
+            StateHasChanged();
+        }
+    }
+
+    public async Task HandleGoogleCallback(string code)
+    {
+        if (GoogleCalendarService == null || CurrentUserId == 0) return;
+
+        var success = await GoogleCalendarService.HandleAuthCallbackAsync(code, CurrentUserId);
+        IsGoogleConnected = success;
+        if (success)
+        {
+            ImportMessage = "Connected! Switch to Google tab to view events.";
+            await LoadExternalEventCounts();
+        }
+        else
+        {
+            ImportMessage = "Failed to connect. Please try again.";
+        }
+        StateHasChanged();
+    }
+
+    // Microsoft Calendar methods
+    private async Task ConnectMicrosoft()
+    {
+        if (MicrosoftCalendarService == null || CurrentUserId == 0) return;
+
+        try
+        {
+            var authUrl = await MicrosoftCalendarService.GetAuthorizationUrlAsync(CurrentUserId);
+            await JSRuntime.InvokeVoidAsync("open", authUrl, "_blank");
+            ImportMessage = "Complete authorization in browser, then refresh this page.";
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task DisconnectMicrosoft()
+    {
+        if (MicrosoftCalendarService == null || CurrentUserId == 0) return;
+
+        await MicrosoftCalendarService.DisconnectAsync(CurrentUserId);
+        IsMicrosoftConnected = false;
+        MicrosoftEventCount = 0;
+        if (ActiveCalendarTab == CalendarSource.Microsoft)
+        {
+            ActiveCalendarTab = CalendarSource.Integrated;
+        }
+        ImportMessage = "";
+        StateHasChanged();
+    }
+
+    // Calendar Tab methods
+    private async Task SetCalendarTab(CalendarSource tab)
+    {
+        ActiveCalendarTab = tab;
+        if (tab != CalendarSource.Integrated)
+        {
+            await LoadExternalEventsForTab(tab);
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadExternalEventCounts()
+    {
+        var startDate = IsDailyView ? SelectedDate : GetWeekStart(SelectedDate);
+        var endDate = IsDailyView ? SelectedDate.AddDays(1) : startDate.AddDays(7);
+
+        if (IsGoogleConnected && CalendarSyncService != null)
+        {
+            try
+            {
+                var events = await CalendarSyncService.GetEventsBySourceAsync(CurrentUserId, CalendarSource.Google, startDate, endDate);
+                GoogleEventCount = events.Count;
+            }
+            catch { GoogleEventCount = 0; }
+        }
+
+        if (IsMicrosoftConnected && CalendarSyncService != null)
+        {
+            try
+            {
+                var events = await CalendarSyncService.GetEventsBySourceAsync(CurrentUserId, CalendarSource.Microsoft, startDate, endDate);
+                MicrosoftEventCount = events.Count;
+            }
+            catch { MicrosoftEventCount = 0; }
+        }
+    }
+
+    private async Task LoadExternalEventsForTab(CalendarSource source)
+    {
+        if (CalendarSyncService == null || CurrentUserId == 0) return;
+
+        IsLoadingExternalEvents = true;
+        StateHasChanged();
+
+        try
+        {
+            var startDate = IsDailyView ? SelectedDate : GetWeekStart(SelectedDate);
+            var endDate = IsDailyView ? SelectedDate.AddDays(1) : startDate.AddDays(7);
+
+            ExternalEvents = await CalendarSyncService.GetEventsBySourceAsync(CurrentUserId, source, startDate, endDate);
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Error loading events: {ex.Message}";
+            ExternalEvents = new List<ExternalCalendarEvent>();
+        }
+        finally
+        {
+            IsLoadingExternalEvents = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ImportSingleEvent(ExternalCalendarEvent evt)
+    {
+        if (CalendarSyncService == null || CurrentUserId == 0) return;
+
+        try
+        {
+            await CalendarSyncService.ImportEventToIntegratedAsync(CurrentUserId, evt);
+            evt.IsImported = true;
+            await LoadTasksAsync();
+            ImportMessage = $"Added '{evt.Title}' to Integrated";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task ImportAllExternalEvents()
+    {
+        if (CalendarSyncService == null || CurrentUserId == 0) return;
+
+        IsImporting = true;
+        StateHasChanged();
+
+        try
+        {
+            var toImport = ExternalEvents.Where(e => !e.IsImported).ToList();
+            var count = await CalendarSyncService.ImportEventsToIntegratedAsync(CurrentUserId, toImport);
+            ImportMessage = $"Imported {count} event(s) to Integrated!";
+            await LoadTasksAsync();
+            await LoadExternalEventsForTab(ActiveCalendarTab);
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsImporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private DateTime GetWeekStart(DateTime date)
+    {
+        int diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
+        return date.AddDays(-1 * diff).Date;
+    }
+
+    // Timeline helper methods
+    private List<DailyTask> GetTasksAtHour(int hour)
+    {
+        return ScheduledTasks
+            .Where(t => t.ScheduledTime.HasValue && t.ScheduledTime.Value.Hours == hour)
+            .OrderBy(t => t.ScheduledTime!.Value.Minutes)
+            .ToList();
+    }
+
+    private List<ExternalCalendarEvent> GetGoogleEventsAtHour(int hour)
+    {
+        if (!IsGoogleConnected) return new List<ExternalCalendarEvent>();
+
+        return ExternalEvents
+            .Where(e => !e.IsAllDay && e.Start.Hour == hour && e.Start.Date == SelectedDate.Date)
+            .OrderBy(e => e.Start.Minute)
+            .ToList();
     }
 }
