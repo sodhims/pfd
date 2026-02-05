@@ -7,7 +7,6 @@
 @inject IAnalysisService AnalysisService
 @inject IAuthService AuthService
 @inject ICalendarCredentialsService CredentialsService
-@inject IGroupService GroupService
 @inject IServiceProvider ServiceProvider
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
@@ -132,21 +131,6 @@
                     ⚙ Manage Credentials
                 </button>
             </div>
-            </div>
-            <div class="setting-group">
-                <label>Groups</label>
-                <div class="group-list">
-                    @foreach (var group in UserGroups)
-                    {
-                        <div class="group-item">
-                            <span class="group-name">@group.Name</span>
-                            @if (group.LeaderUserId == CurrentUserId)
-                            { <span class="leader-badge">Leader</span> }
-                            <button class="manage-group-btn" @onclick="() => OpenGroupManager(group)">...</button>
-                        </div>
-                    }
-                </div>
-                <button class="create-group-btn" @onclick="ShowCreateGroupDialog">+ New Group</button>
             <div class="setting-group user-section">
                 <label>Signed in as</label>
                 <span class="username">@CurrentUsername</span>
@@ -644,29 +628,6 @@
             }
         </div>
     }
-    @if (ManagingGroup != null)
-    {
-        <div class="modal-overlay" @onclick="CloseGroupModal">
-            <div class="group-modal" @onclick:stopPropagation="true">
-                <div class="modal-header"><span>Manage: @ManagingGroup.Name</span><button class="close-btn" @onclick="CloseGroupModal">X</button></div>
-                <div class="modal-body">
-                    <label>Members</label>
-                    <div class="members-list">@foreach (var m in GroupMembers) { <div class="member-item"><span>@(m.DisplayName ?? m.Username)</span>@if (m.Id == ManagingGroup.LeaderUserId) { <span class="leader-badge">Leader</span> } else if (ManagingGroup.LeaderUserId == CurrentUserId) { <button class="remove-member-btn" @onclick="() => RemoveMember(m)">X</button> }</div> }</div>
-                    @if (ManagingGroup.LeaderUserId == CurrentUserId) { <div class="add-member-row"><select @bind="SelectedUserIdToAdd"><option value="0">-- Select --</option>@foreach (var u in AvailableUsersToAdd) { <option value="@u.Id">@(u.DisplayName ?? u.Username)</option> }</select><button @onclick="AddMember">Add</button></div><button class="delete-group-btn" @onclick="DeleteGroup">Delete Group</button> }
-                    @if (!string.IsNullOrEmpty(GroupModalMessage)) { <div>@GroupModalMessage</div> }
-                </div>
-            </div>
-        </div>
-    }
-    @if (ShowCreateGroupModal)
-    {
-        <div class="modal-overlay" @onclick="CloseGroupModal">
-            <div class="group-modal" @onclick:stopPropagation="true">
-                <div class="modal-header"><span>Create Group</span><button class="close-btn" @onclick="CloseGroupModal">X</button></div>
-                <div class="modal-body"><input type="text" @bind="NewGroupName" placeholder="Group name" /><button @onclick="CreateGroup">Create</button></div>
-            </div>
-        </div>
-    }
 </div>
 
 @code {
@@ -752,15 +713,6 @@
     // Credentials info
     private bool HasGoogleCredentials { get; set; } = false;
     private bool HasMicrosoftCredentials { get; set; } = false;
-    private List<TaskGroup> UserGroups { get; set; } = new();
-    private TaskGroup? ManagingGroup { get; set; }
-    private string NewGroupName { get; set; } = "";
-    private int SelectedUserIdToAdd { get; set; } = 0;
-    private List<User> AllUsers { get; set; } = new();
-    private List<User> GroupMembers { get; set; } = new();
-    private string GroupModalMessage { get; set; } = "";
-    private bool ShowCreateGroupModal { get; set; } = false;
-    private List<User> AvailableUsersToAdd => AllUsers.Where(u => u.Id != CurrentUserId).ToList();
 
     protected override void OnInitialized()
     {
@@ -826,7 +778,6 @@
             await LoadExternalEventCounts();
 
             await LoadTasksAsync();
-        await LoadGroupsAsync();
             StateHasChanged();
         }
         catch (Exception)
@@ -984,7 +935,6 @@
     {
         IsDailyView = daily;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
         await SaveSettingsAsync();
     }
 
@@ -1018,15 +968,13 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
-        var (parsedDate, parsedTime, cleanTitle) = ParseTaskDateTime(NewTaskText);
         var task = new DailyTask
         {
-            Title = cleanTitle,
-            TaskDate = parsedDate,
+            Title = NewTaskText,
+            TaskDate = SelectedDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
-            IsAllDay = !parsedTime.HasValue && string.IsNullOrWhiteSpace(NewTaskTimeText),
-            ScheduledTime = parsedTime,
+            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText),
             UserId = CurrentUserId
         };
 
@@ -1041,56 +989,48 @@
         NewTaskText = "";
         NewTaskTimeText = "";
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleWeeklyTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteWeeklyTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleOverdueTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteOverdueTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task MoveToToday(DailyTask task)
     {
         await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private bool IsTaskInPast(DailyTask task)
@@ -1136,7 +1076,6 @@
             EditingTask.Title = EditingTaskText;
             await TaskService.UpdateTaskAsync(EditingTask);
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
         EditingTaskId = null;
         EditingTask = null;
@@ -1209,7 +1148,6 @@
         {
             SelectedDate = date;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
     }
 
@@ -1218,21 +1156,18 @@
     {
         SelectedDate = SelectedDate.AddDays(-1);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task NextDay()
     {
         SelectedDate = SelectedDate.AddDays(1);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task GoToToday()
     {
         SelectedDate = DateTime.Today;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     // Day roller drag handlers
@@ -1259,7 +1194,6 @@
             SelectedDate = SelectedDate.AddDays(dayChange);
             rollerOffset = 0;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
 
         StateHasChanged();
@@ -1297,7 +1231,6 @@
             SelectedDate = SelectedDate.AddDays(dayChange);
             rollerOffset = 0;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
 
         StateHasChanged();
@@ -1316,7 +1249,6 @@
         var dayChange = e.DeltaY > 0 ? 1 : -1;
         SelectedDate = SelectedDate.AddDays(dayChange);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task OnTimeRollerScroll()
@@ -1480,14 +1412,12 @@
         await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
         EditingTimeTask = null;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ClearTaskTime(DailyTask task)
     {
         await TaskService.ScheduleTaskTimeAsync(task.Id, null, CurrentUserId, 30);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private class CalendarDay
@@ -1548,7 +1478,6 @@
                 : "No new events to import.";
 
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
         catch (Exception ex)
         {
@@ -1683,7 +1612,6 @@
             await CalendarSyncService.ImportEventToIntegratedAsync(CurrentUserId, evt);
             evt.IsImported = true;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
             ImportMessage = $"Added '{evt.Title}' to Integrated";
             StateHasChanged();
         }
@@ -1706,7 +1634,6 @@
             var count = await CalendarSyncService.ImportEventsToIntegratedAsync(CurrentUserId, toImport);
             ImportMessage = $"Imported {count} event(s) to Integrated!";
             await LoadTasksAsync();
-        await LoadGroupsAsync();
             await LoadExternalEventsForTab(ActiveCalendarTab);
         }
         catch (Exception ex)
@@ -1744,25 +1671,4 @@
             .OrderBy(e => e.Start.Minute)
             .ToList();
     }
-
-    private async Task LoadGroupsAsync() { if (CurrentUserId == 0) return; try { UserGroups = await GroupService.GetGroupsForUserAsync(CurrentUserId); } catch { UserGroups = new(); } }
-    private void ShowCreateGroupDialog() { ShowCreateGroupModal = true; ManagingGroup = null; NewGroupName = ""; }
-    private void CloseGroupModal() { ManagingGroup = null; NewGroupName = ""; GroupModalMessage = ""; ShowCreateGroupModal = false; }
-    private async Task CreateGroup() { if (string.IsNullOrWhiteSpace(NewGroupName) || CurrentUserId == 0) return; await GroupService.CreateGroupAsync(NewGroupName.Trim(), CurrentUserId); await LoadGroupsAsync(); CloseGroupModal(); }
-    private async Task OpenGroupManager(TaskGroup group) { ManagingGroup = group; GroupMembers = await GroupService.GetGroupMembersAsync(group.Id); AllUsers = await GroupService.GetAllUsersAsync(); SelectedUserIdToAdd = 0; GroupModalMessage = ""; ShowCreateGroupModal = false; }
-    private async Task AddMember() { if (SelectedUserIdToAdd == 0 || ManagingGroup == null) return; var user = AllUsers.FirstOrDefault(u => u.Id == SelectedUserIdToAdd); if (user == null) return; var ok = await GroupService.AddMemberByUsernameAsync(ManagingGroup.Id, user.Username, CurrentUserId); if (ok) { SelectedUserIdToAdd = 0; GroupMembers = await GroupService.GetGroupMembersAsync(ManagingGroup.Id); GroupModalMessage = "Added!"; } else { GroupModalMessage = "Failed"; } }
-    private async Task RemoveMember(User m) { if (ManagingGroup == null) return; await GroupService.RemoveMemberAsync(ManagingGroup.Id, m.Id, CurrentUserId); GroupMembers = await GroupService.GetGroupMembersAsync(ManagingGroup.Id); }
-    private async Task DeleteGroup() { if (ManagingGroup == null) return; await GroupService.DeleteGroupAsync(ManagingGroup.Id, CurrentUserId); await LoadGroupsAsync(); CloseGroupModal(); }
-
-    private (DateTime date, TimeSpan? time, string title) ParseTaskDateTime(string input) {
-        var date = SelectedDate; TimeSpan? time = null; var title = input; var lower = input.ToLower();
-        if (lower.Contains("tomorrow")) { date = DateTime.Today.AddDays(1); title = System.Text.RegularExpressions.Regex.Replace(title, @"\btomorrow\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); }
-        else { var days = new[] { ("monday", DayOfWeek.Monday), ("tuesday", DayOfWeek.Tuesday), ("wednesday", DayOfWeek.Wednesday), ("thursday", DayOfWeek.Thursday), ("friday", DayOfWeek.Friday), ("saturday", DayOfWeek.Saturday), ("sunday", DayOfWeek.Sunday) };
-            foreach (var (n, d) in days) { if (lower.Contains(n)) { date = GetNextWeekday(d); title = System.Text.RegularExpressions.Regex.Replace(title, $@"\b{n}\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); break; } } }
-        var m = System.Text.RegularExpressions.Regex.Match(lower, @"(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (m.Success) { int h = int.Parse(m.Groups[1].Value); int mi = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0; var ap = m.Groups[3].Value.ToLower(); if (ap == "pm" && h < 12) h += 12; if (ap == "am" && h == 12) h = 0; time = new TimeSpan(h, mi, 0); title = System.Text.RegularExpressions.Regex.Replace(title, @"(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); }
-        title = System.Text.RegularExpressions.Regex.Replace(title, @"\s+on\s*$|\s+at\s*$", "").Trim(); title = System.Text.RegularExpressions.Regex.Replace(title, @"\s+", " ").Trim();
-        return (date, time, title);
-    }
-    private DateTime GetNextWeekday(DayOfWeek day) { var t = DateTime.Today; int d = ((int)day - (int)t.DayOfWeek + 7) % 7; if (d == 0) d = 7; return t.AddDays(d); }
 }
