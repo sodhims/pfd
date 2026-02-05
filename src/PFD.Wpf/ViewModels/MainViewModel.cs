@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PFD.Services;
 using PFD.Shared.Interfaces;
 using PFD.Shared.Models;
 
@@ -11,6 +12,10 @@ public partial class MainViewModel : ObservableObject
     private readonly ITaskService _taskService;
     private readonly IOllamaService _ollamaService;
     private readonly IAnalysisService _analysisService;
+    private readonly IAuthService _authService;
+    private readonly IGoogleCalendarService? _googleCalendarService;
+    private readonly MicrosoftCalendarService? _microsoftCalendarService;
+    private readonly ICalendarSyncService? _calendarSyncService;
 
     [ObservableProperty]
     private DateTime _selectedDate = DateTime.Today;
@@ -99,11 +104,84 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<DailyTask> _allDayTasks = new();
 
-    public MainViewModel(ITaskService taskService, IOllamaService ollamaService, IAnalysisService analysisService)
+    // Authentication
+    [ObservableProperty]
+    private int _currentUserId = 0;
+
+    [ObservableProperty]
+    private string _currentUsername = string.Empty;
+
+    [ObservableProperty]
+    private bool _isLoggedIn = false;
+
+    [ObservableProperty]
+    private bool _isLoginMode = true;
+
+    [ObservableProperty]
+    private string _loginUsername = string.Empty;
+
+    [ObservableProperty]
+    private string _loginPassword = string.Empty;
+
+    [ObservableProperty]
+    private string _loginError = string.Empty;
+
+    // External Calendars
+    [ObservableProperty]
+    private bool _isGoogleCalendarAvailable = false;
+
+    [ObservableProperty]
+    private bool _isMicrosoftCalendarAvailable = false;
+
+    [ObservableProperty]
+    private bool _isGoogleConnected = false;
+
+    [ObservableProperty]
+    private bool _isMicrosoftConnected = false;
+
+    [ObservableProperty]
+    private bool _isGoogleImporting = false;
+
+    [ObservableProperty]
+    private string _googleImportMessage = string.Empty;
+
+    // Calendar Tabs
+    [ObservableProperty]
+    private CalendarSource _activeCalendarTab = CalendarSource.Integrated;
+
+    [ObservableProperty]
+    private ObservableCollection<ExternalCalendarEvent> _externalEvents = new();
+
+    [ObservableProperty]
+    private bool _isLoadingExternalEvents = false;
+
+    [ObservableProperty]
+    private int _googleEventCount = 0;
+
+    [ObservableProperty]
+    private int _microsoftEventCount = 0;
+
+    [ObservableProperty]
+    private bool _showExternalCalendarTabs = false;
+
+    public MainViewModel(
+        ITaskService taskService,
+        IOllamaService ollamaService,
+        IAnalysisService analysisService,
+        IAuthService authService,
+        IGoogleCalendarService? googleCalendarService = null,
+        MicrosoftCalendarService? microsoftCalendarService = null,
+        ICalendarSyncService? calendarSyncService = null)
     {
         _taskService = taskService;
         _ollamaService = ollamaService;
         _analysisService = analysisService;
+        _authService = authService;
+        _googleCalendarService = googleCalendarService;
+        _microsoftCalendarService = microsoftCalendarService;
+        _calendarSyncService = calendarSyncService;
+        IsGoogleCalendarAvailable = googleCalendarService != null;
+        IsMicrosoftCalendarAvailable = microsoftCalendarService != null;
     }
 
     public async Task InitializeAsync()
@@ -218,10 +296,12 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadTasksAsync()
     {
+        if (CurrentUserId == 0) return;
+
         // Load overdue tasks (only when viewing today)
         if (SelectedDate.Date == DateTime.Today)
         {
-            var overdue = await _taskService.GetOverdueTasksAsync(DateTime.Today);
+            var overdue = await _taskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
             OverdueTasks = new ObservableCollection<DailyTask>(overdue);
             HasOverdueTasks = overdue.Any();
         }
@@ -238,7 +318,7 @@ public partial class MainViewModel : ObservableObject
             var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
             var startOfWeek = SelectedDate.AddDays(-daysToMonday);
 
-            var allTasks = await _taskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4));
+            var allTasks = await _taskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4), CurrentUserId);
 
             // Build weekly task list with day indicators
             var weeklyTasks = allTasks.Select(t => new WeeklyTaskViewModel(t)).ToList();
@@ -249,7 +329,7 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
-            var tasks = await _taskService.GetTasksForDateAsync(SelectedDate);
+            var tasks = await _taskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
             Tasks = new ObservableCollection<DailyTask>(tasks);
 
             // Split into scheduled and all-day tasks
@@ -289,7 +369,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task AddTask()
     {
-        if (string.IsNullOrWhiteSpace(NewTaskText))
+        if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0)
             return;
 
         var task = new DailyTask
@@ -298,7 +378,8 @@ public partial class MainViewModel : ObservableObject
             TaskDate = SelectedDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
-            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText)
+            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText),
+            UserId = CurrentUserId
         };
 
         // Parse scheduled time if provided
@@ -341,7 +422,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.ToggleCompletionAsync(task.Id);
+        await _taskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -350,7 +431,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.DeleteTaskAsync(task.Id);
+        await _taskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -367,7 +448,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (weeklyTask == null) return;
 
-        await _taskService.ToggleCompletionAsync(weeklyTask.Id);
+        await _taskService.ToggleCompletionAsync(weeklyTask.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -376,7 +457,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (weeklyTask == null) return;
 
-        await _taskService.DeleteTaskAsync(weeklyTask.Id);
+        await _taskService.DeleteTaskAsync(weeklyTask.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -393,7 +474,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.ToggleCompletionAsync(task.Id);
+        await _taskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -402,7 +483,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.DeleteTaskAsync(task.Id);
+        await _taskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -411,7 +492,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.RescheduleTaskAsync(task.Id, DateTime.Today);
+        await _taskService.RescheduleTaskAsync(task.Id, DateTime.Today, CurrentUserId);
         await LoadTasksAsync();
     }
 
@@ -443,8 +524,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             // Get recent tasks for analysis
-            var recentTasks = await _taskService.GetRecentTasksAsync(30);
-            var overdueTasks = await _taskService.GetOverdueTasksAsync(DateTime.Today);
+            var recentTasks = await _taskService.GetRecentTasksAsync(CurrentUserId, 30);
+            var overdueTasks = await _taskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
             var todayTasks = Tasks.ToList();
 
             // Get insights
@@ -496,7 +577,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var upcomingTasks = await _taskService.GetUpcomingTasksAsync(14);
+            var upcomingTasks = await _taskService.GetUpcomingTasksAsync(CurrentUserId, 14);
             SchedulingSuggestion = await _analysisService.SuggestSchedulingAsync(NewTaskText, upcomingTasks);
             HasSchedulingSuggestion = true;
         }
@@ -545,7 +626,7 @@ public partial class MainViewModel : ObservableObject
             time = parsed;
         }
 
-        await _taskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, EditingDuration);
+        await _taskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
         EditingTimeTask = null;
         IsTimeEditorOpen = false;
         await LoadTasksAsync();
@@ -556,7 +637,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (task == null) return;
 
-        await _taskService.ScheduleTaskTimeAsync(task.Id, null, 30);
+        await _taskService.ScheduleTaskTimeAsync(task.Id, null, CurrentUserId, 30);
         await LoadTasksAsync();
     }
 
@@ -565,6 +646,361 @@ public partial class MainViewModel : ObservableObject
         if (!time.HasValue) return "";
         var dt = DateTime.Today.Add(time.Value);
         return dt.ToString("h:mm tt");
+    }
+
+    [RelayCommand]
+    private async Task Login()
+    {
+        LoginError = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(LoginUsername) || string.IsNullOrWhiteSpace(LoginPassword))
+        {
+            LoginError = "Please enter username and password";
+            return;
+        }
+
+        var user = await _authService.LoginAsync(LoginUsername.Trim(), LoginPassword);
+        if (user != null)
+        {
+            CurrentUserId = user.Id;
+            CurrentUsername = user.DisplayName ?? user.Username;
+            IsLoggedIn = true;
+            LoginPassword = string.Empty;
+
+            // Check external calendar connections
+            if (_googleCalendarService != null)
+            {
+                IsGoogleConnected = await _googleCalendarService.IsConnectedAsync(CurrentUserId);
+            }
+            if (_microsoftCalendarService != null)
+            {
+                IsMicrosoftConnected = await _microsoftCalendarService.IsConnectedAsync(CurrentUserId);
+            }
+
+            UpdateExternalCalendarTabs();
+            await LoadExternalEventCounts();
+            await InitializeAsync();
+        }
+        else
+        {
+            LoginError = "Invalid username or password";
+        }
+    }
+
+    [RelayCommand]
+    private async Task Register()
+    {
+        LoginError = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(LoginUsername) || string.IsNullOrWhiteSpace(LoginPassword))
+        {
+            LoginError = "Please enter username and password";
+            return;
+        }
+
+        if (LoginUsername.Trim().Length < 3)
+        {
+            LoginError = "Username must be at least 3 characters";
+            return;
+        }
+
+        if (LoginPassword.Length < 4)
+        {
+            LoginError = "Password must be at least 4 characters";
+            return;
+        }
+
+        if (await _authService.UsernameExistsAsync(LoginUsername.Trim()))
+        {
+            LoginError = "Username already taken";
+            return;
+        }
+
+        var user = await _authService.RegisterAsync(LoginUsername.Trim(), LoginPassword);
+        if (user != null)
+        {
+            CurrentUserId = user.Id;
+            CurrentUsername = user.DisplayName ?? user.Username;
+            IsLoggedIn = true;
+            LoginPassword = string.Empty;
+            await InitializeAsync();
+        }
+        else
+        {
+            LoginError = "Registration failed";
+        }
+    }
+
+    [RelayCommand]
+    private void Logout()
+    {
+        CurrentUserId = 0;
+        CurrentUsername = string.Empty;
+        IsLoggedIn = false;
+        Tasks.Clear();
+        WeeklyTasks.Clear();
+        OverdueTasks.Clear();
+        ScheduledTasks.Clear();
+        AllDayTasks.Clear();
+    }
+
+    [RelayCommand]
+    private void ToggleLoginMode()
+    {
+        IsLoginMode = !IsLoginMode;
+        LoginError = string.Empty;
+        LoginPassword = string.Empty;
+    }
+
+    // Google Calendar methods
+    [RelayCommand]
+    private async Task ConnectGoogleCalendar()
+    {
+        if (_googleCalendarService == null || CurrentUserId == 0) return;
+
+        try
+        {
+            var authUrl = await _googleCalendarService.GetAuthorizationUrlAsync(CurrentUserId);
+            // Open in default browser
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = authUrl,
+                UseShellExecute = true
+            });
+            GoogleImportMessage = "Complete authorization in browser, then click 'Check Connection'";
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckGoogleConnection()
+    {
+        if (_googleCalendarService == null || CurrentUserId == 0) return;
+
+        IsGoogleConnected = await _googleCalendarService.IsConnectedAsync(CurrentUserId);
+        if (IsGoogleConnected)
+        {
+            GoogleImportMessage = "Connected! Click 'Import Events' to sync.";
+        }
+        else
+        {
+            GoogleImportMessage = "Not connected. Click 'Connect' to authorize.";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportGoogleEvents()
+    {
+        if (_googleCalendarService == null || CurrentUserId == 0) return;
+
+        IsGoogleImporting = true;
+        GoogleImportMessage = "";
+
+        try
+        {
+            var startDate = DateTime.Today;
+            var endDate = DateTime.Today.AddDays(30);
+
+            var count = await _googleCalendarService.ImportEventsAsTasksAsync(CurrentUserId, startDate, endDate);
+            GoogleImportMessage = count > 0
+                ? $"Imported {count} event(s)!"
+                : "No new events to import.";
+
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsGoogleImporting = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DisconnectGoogleCalendar()
+    {
+        if (_googleCalendarService == null || CurrentUserId == 0) return;
+
+        await _googleCalendarService.DisconnectAsync(CurrentUserId);
+        IsGoogleConnected = false;
+        GoogleEventCount = 0;
+        UpdateExternalCalendarTabs();
+        GoogleImportMessage = "Disconnected.";
+    }
+
+    // Microsoft Calendar methods
+    [RelayCommand]
+    private async Task ConnectMicrosoftCalendar()
+    {
+        if (_microsoftCalendarService == null || CurrentUserId == 0) return;
+
+        try
+        {
+            var authUrl = await _microsoftCalendarService.GetAuthorizationUrlAsync(CurrentUserId);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = authUrl,
+                UseShellExecute = true
+            });
+            GoogleImportMessage = "Complete authorization in browser, then click 'Check Connection'";
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckMicrosoftConnection()
+    {
+        if (_microsoftCalendarService == null || CurrentUserId == 0) return;
+
+        IsMicrosoftConnected = await _microsoftCalendarService.IsConnectedAsync(CurrentUserId);
+        UpdateExternalCalendarTabs();
+        await LoadExternalEventCounts();
+
+        GoogleImportMessage = IsMicrosoftConnected
+            ? "Microsoft connected! Switch to Teams tab to view events."
+            : "Not connected. Click 'Connect' to authorize.";
+    }
+
+    [RelayCommand]
+    private async Task DisconnectMicrosoftCalendar()
+    {
+        if (_microsoftCalendarService == null || CurrentUserId == 0) return;
+
+        await _microsoftCalendarService.DisconnectAsync(CurrentUserId);
+        IsMicrosoftConnected = false;
+        MicrosoftEventCount = 0;
+        if (ActiveCalendarTab == CalendarSource.Microsoft)
+        {
+            ActiveCalendarTab = CalendarSource.Integrated;
+        }
+        UpdateExternalCalendarTabs();
+        GoogleImportMessage = "Microsoft disconnected.";
+    }
+
+    // Calendar Tab methods
+    private void UpdateExternalCalendarTabs()
+    {
+        ShowExternalCalendarTabs = IsGoogleConnected || IsMicrosoftConnected;
+    }
+
+    [RelayCommand]
+    private async Task SetCalendarTab(CalendarSource tab)
+    {
+        ActiveCalendarTab = tab;
+        if (tab != CalendarSource.Integrated)
+        {
+            await LoadExternalEventsForTab(tab);
+        }
+    }
+
+    private async Task LoadExternalEventCounts()
+    {
+        if (_calendarSyncService == null || CurrentUserId == 0) return;
+
+        var startDate = IsDailyView ? SelectedDate : GetWeekStart(SelectedDate);
+        var endDate = IsDailyView ? SelectedDate.AddDays(1) : startDate.AddDays(7);
+
+        if (IsGoogleConnected)
+        {
+            try
+            {
+                var events = await _calendarSyncService.GetEventsBySourceAsync(CurrentUserId, CalendarSource.Google, startDate, endDate);
+                GoogleEventCount = events.Count;
+            }
+            catch { GoogleEventCount = 0; }
+        }
+
+        if (IsMicrosoftConnected)
+        {
+            try
+            {
+                var events = await _calendarSyncService.GetEventsBySourceAsync(CurrentUserId, CalendarSource.Microsoft, startDate, endDate);
+                MicrosoftEventCount = events.Count;
+            }
+            catch { MicrosoftEventCount = 0; }
+        }
+    }
+
+    private async Task LoadExternalEventsForTab(CalendarSource source)
+    {
+        if (_calendarSyncService == null || CurrentUserId == 0) return;
+
+        IsLoadingExternalEvents = true;
+
+        try
+        {
+            var startDate = IsDailyView ? SelectedDate : GetWeekStart(SelectedDate);
+            var endDate = IsDailyView ? SelectedDate.AddDays(1) : startDate.AddDays(7);
+
+            var events = await _calendarSyncService.GetEventsBySourceAsync(CurrentUserId, source, startDate, endDate);
+            ExternalEvents = new ObservableCollection<ExternalCalendarEvent>(events);
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Error loading events: {ex.Message}";
+            ExternalEvents.Clear();
+        }
+        finally
+        {
+            IsLoadingExternalEvents = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportSingleEvent(ExternalCalendarEvent evt)
+    {
+        if (_calendarSyncService == null || CurrentUserId == 0 || evt == null) return;
+
+        try
+        {
+            await _calendarSyncService.ImportEventToIntegratedAsync(CurrentUserId, evt);
+            evt.IsImported = true;
+            await LoadTasksAsync();
+            GoogleImportMessage = $"Added '{evt.Title}' to Integrated";
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportAllExternalEvents()
+    {
+        if (_calendarSyncService == null || CurrentUserId == 0) return;
+
+        IsGoogleImporting = true;
+
+        try
+        {
+            var toImport = ExternalEvents.Where(e => !e.IsImported).ToList();
+            var count = await _calendarSyncService.ImportEventsToIntegratedAsync(CurrentUserId, toImport);
+            GoogleImportMessage = $"Imported {count} event(s) to Integrated!";
+            await LoadTasksAsync();
+            await LoadExternalEventsForTab(ActiveCalendarTab);
+        }
+        catch (Exception ex)
+        {
+            GoogleImportMessage = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            IsGoogleImporting = false;
+        }
+    }
+
+    private DateTime GetWeekStart(DateTime date)
+    {
+        int diff = (7 + (date.DayOfWeek - DayOfWeek.Sunday)) % 7;
+        return date.AddDays(-1 * diff).Date;
     }
 }
 

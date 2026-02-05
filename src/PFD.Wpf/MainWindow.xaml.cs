@@ -90,4 +90,20 @@ public partial class MainWindow : Window
             Keyboard.ClearFocus();
         }
     }
+
+    private void LoginPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox passwordBox && DataContext is MainViewModel vm)
+        {
+            vm.LoginPassword = passwordBox.Password;
+        }
+    }
+
+    private void RegisterPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox passwordBox && DataContext is MainViewModel vm)
+        {
+            vm.LoginPassword = passwordBox.Password;
+        }
+    }
 }

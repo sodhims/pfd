@@ -11,6 +11,8 @@ public class PfdDbContext : DbContext
     public DbSet<TaskParticipant> TaskParticipants { get; set; } = null!;
     public DbSet<UserSettings> UserSettings { get; set; } = null!;
     public DbSet<CalendarCredentials> CalendarCredentials { get; set; } = null!;
+    public DbSet<TaskGroup> TaskGroups { get; set; } = null!;
+    public DbSet<GroupMember> GroupMembers { get; set; } = null!;
 
     private bool IsSqlServer => Database.ProviderName?.Contains("SqlServer") == true;
 
@@ -24,18 +26,111 @@ public class PfdDbContext : DbContext
 
     /// <summary>
     /// Ensures the database schema is up-to-date.
-    /// For SQLite, adds any missing columns and tables manually.
-    /// For SQL Server / Azure SQL, EnsureCreated() handles everything.
+    /// Adds any missing columns manually for both SQLite and SQL Server.
     /// </summary>
     public void EnsureSchemaUpdated()
     {
-        // For SQL Server, EnsureCreated() handles schema properly
-        if (Database.ProviderName?.Contains("SqlServer") == true)
-        {
-            return; // Schema is managed by EF migrations or EnsureCreated
-        }
+        var isSqlServer = Database.ProviderName?.Contains("SqlServer") == true;
 
-        // SQLite manual schema updates
+        if (isSqlServer)
+        {
+            EnsureSqlServerSchema();
+        }
+        else
+        {
+            EnsureSqliteSchema();
+        }
+    }
+
+    private void EnsureSqlServerSchema()
+    {
+        var connection = Database.GetDbConnection();
+        connection.Open();
+
+        try
+        {
+            // Add missing columns to daily_tasks
+            var columnsToAdd = new Dictionary<string, string>
+            {
+                { "ParentTaskId", "INT NULL" },
+                { "GroupId", "INT NULL" }
+            };
+
+            foreach (var column in columnsToAdd)
+            {
+                try
+                {
+                    using var checkCmd = connection.CreateCommand();
+                    checkCmd.CommandText = $@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'daily_tasks' AND COLUMN_NAME = '{column.Key}'
+                        )
+                        BEGIN
+                            ALTER TABLE daily_tasks ADD {column.Key} {column.Value};
+                        END";
+                    checkCmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not add column {column.Key}: {ex.Message}");
+                }
+            }
+
+            // Create task_groups table if it doesn't exist
+            try
+            {
+                using var createGroupsCmd = connection.CreateCommand();
+                createGroupsCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'task_groups')
+                    BEGIN
+                        CREATE TABLE task_groups (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(100) NOT NULL,
+                            LeaderUserId INT NOT NULL,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_task_groups_users FOREIGN KEY (LeaderUserId) REFERENCES users(Id)
+                        );
+                    END";
+                createGroupsCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create task_groups table: {ex.Message}");
+            }
+
+            // Create group_members table if it doesn't exist
+            try
+            {
+                using var createMembersCmd = connection.CreateCommand();
+                createMembersCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'group_members')
+                    BEGIN
+                        CREATE TABLE group_members (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            GroupId INT NOT NULL,
+                            UserId INT NOT NULL,
+                            JoinedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_group_members_groups FOREIGN KEY (GroupId) REFERENCES task_groups(Id) ON DELETE CASCADE,
+                            CONSTRAINT FK_group_members_users FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE,
+                            CONSTRAINT UQ_group_members UNIQUE (GroupId, UserId)
+                        );
+                    END";
+                createMembersCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create group_members table: {ex.Message}");
+            }
+        }
+        finally
+        {
+            connection.Close();
+        }
+    }
+
+    private void EnsureSqliteSchema()
+    {
         var connection = Database.GetDbConnection();
         connection.Open();
 
@@ -73,7 +168,9 @@ public class PfdDbContext : DbContext
                 { "ScheduledTime", "TEXT NULL" },
                 { "DurationMinutes", "INTEGER NOT NULL DEFAULT 30" },
                 { "IsAllDay", "INTEGER NOT NULL DEFAULT 1" },
-                { "UserId", "INTEGER NOT NULL DEFAULT 0" }
+                { "UserId", "INTEGER NOT NULL DEFAULT 0" },
+                { "ParentTaskId", "INTEGER NULL" },
+                { "GroupId", "INTEGER NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -102,7 +199,6 @@ public class PfdDbContext : DbContext
             }
             catch
             {
-                // Table doesn't exist, create it
                 using var createCredsCmd = connection.CreateCommand();
                 createCredsCmd.CommandText = @"
                     CREATE TABLE calendar_credentials (
@@ -122,6 +218,50 @@ public class PfdDbContext : DbContext
                         UNIQUE(UserId, Provider)
                     )";
                 createCredsCmd.ExecuteNonQuery();
+            }
+
+            // Create task_groups table if it doesn't exist
+            try
+            {
+                using var checkGroupsCmd = connection.CreateCommand();
+                checkGroupsCmd.CommandText = "SELECT Id FROM task_groups LIMIT 1";
+                checkGroupsCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createGroupsCmd = connection.CreateCommand();
+                createGroupsCmd.CommandText = @"
+                    CREATE TABLE task_groups (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Name TEXT NOT NULL,
+                        LeaderUserId INTEGER NOT NULL,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY (LeaderUserId) REFERENCES users(Id)
+                    )";
+                createGroupsCmd.ExecuteNonQuery();
+            }
+
+            // Create group_members table if it doesn't exist
+            try
+            {
+                using var checkMembersCmd = connection.CreateCommand();
+                checkMembersCmd.CommandText = "SELECT Id FROM group_members LIMIT 1";
+                checkMembersCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createMembersCmd = connection.CreateCommand();
+                createMembersCmd.CommandText = @"
+                    CREATE TABLE group_members (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        GroupId INTEGER NOT NULL,
+                        UserId INTEGER NOT NULL,
+                        JoinedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY (GroupId) REFERENCES task_groups(Id) ON DELETE CASCADE,
+                        FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE,
+                        UNIQUE(GroupId, UserId)
+                    )";
+                createMembersCmd.ExecuteNonQuery();
             }
         }
         finally
@@ -173,12 +313,20 @@ public class PfdDbContext : DbContext
             entity.HasIndex(e => e.TaskDate);
             entity.HasIndex(e => e.IsCompleted);
             entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.ParentTaskId);
+            entity.HasIndex(e => e.GroupId);
 
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql(defaultDateSql);
 
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql(defaultDateSql);
+
+            // Self-referencing relationship for subtasks
+            entity.HasOne(t => t.ParentTask)
+                .WithMany(t => t.Subtasks)
+                .HasForeignKey(t => t.ParentTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Participant configuration
@@ -216,6 +364,42 @@ public class PfdDbContext : DbContext
 
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql(defaultDateSql);
+        });
+
+        // TaskGroup configuration
+        modelBuilder.Entity<TaskGroup>(entity =>
+        {
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.HasOne(g => g.Leader)
+                .WithMany(u => u.LedGroups)
+                .HasForeignKey(g => g.LeaderUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasMany(g => g.SharedTasks)
+                .WithOne(t => t.Group)
+                .HasForeignKey(t => t.GroupId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // GroupMember configuration
+        modelBuilder.Entity<GroupMember>(entity =>
+        {
+            entity.HasIndex(e => new { e.GroupId, e.UserId }).IsUnique();
+
+            entity.Property(e => e.JoinedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.HasOne(gm => gm.Group)
+                .WithMany(g => g.Members)
+                .HasForeignKey(gm => gm.GroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(gm => gm.User)
+                .WithMany(u => u.GroupMemberships)
+                .HasForeignKey(gm => gm.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // CalendarCredentials configuration

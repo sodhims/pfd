@@ -1,0 +1,224 @@
+@page "/login"
+@page "/"
+@using PFD.Shared.Interfaces
+@using PFD.Shared.Models
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<div class="login-container">
+    <div class="login-box">
+        <h1 class="login-title">PFD Planner</h1>
+        <p class="login-subtitle">Personal Daily Planner</p>
+
+        @if (!IsRegistering)
+        {
+            <form @onsubmit="HandleLogin">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" @bind="Username" placeholder="Enter username" required />
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" @bind="Password" placeholder="Enter password" required />
+                </div>
+                @if (!string.IsNullOrEmpty(ErrorMessage))
+                {
+                    <div class="error-message">@ErrorMessage</div>
+                }
+                <button type="submit" class="btn-primary" disabled="@IsLoading">
+                    @if (IsLoading)
+                    {
+                        <span>Logging in...</span>
+                    }
+                    else
+                    {
+                        <span>Login</span>
+                    }
+                </button>
+                <p class="toggle-text">
+                    Don't have an account?
+                    <a href="javascript:void(0)" @onclick="ToggleMode">Register</a>
+                </p>
+            </form>
+        }
+        else
+        {
+            <form @onsubmit="HandleRegister">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" @bind="Username" placeholder="Choose a username" required />
+                </div>
+                <div class="form-group">
+                    <label>Display Name (optional)</label>
+                    <input type="text" @bind="DisplayName" placeholder="Your name" />
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" @bind="Password" placeholder="Choose a password" required />
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" @bind="ConfirmPassword" placeholder="Confirm password" required />
+                </div>
+                @if (!string.IsNullOrEmpty(ErrorMessage))
+                {
+                    <div class="error-message">@ErrorMessage</div>
+                }
+                <button type="submit" class="btn-primary" disabled="@IsLoading">
+                    @if (IsLoading)
+                    {
+                        <span>Creating account...</span>
+                    }
+                    else
+                    {
+                        <span>Register</span>
+                    }
+                </button>
+                <p class="toggle-text">
+                    Already have an account?
+                    <a href="javascript:void(0)" @onclick="ToggleMode">Login</a>
+                </p>
+            </form>
+        }
+    </div>
+</div>
+
+@code {
+    private string Username { get; set; } = string.Empty;
+    private string Password { get; set; } = string.Empty;
+    private string ConfirmPassword { get; set; } = string.Empty;
+    private string DisplayName { get; set; } = string.Empty;
+    private string ErrorMessage { get; set; } = string.Empty;
+    private bool IsRegistering { get; set; } = false;
+    private bool IsLoading { get; set; } = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Check if user is already logged in
+            var userId = await JS.InvokeAsync<string>("localStorage.getItem", "pfd_user_id");
+            if (!string.IsNullOrEmpty(userId) && int.TryParse(userId, out var id))
+            {
+                var user = await AuthService.GetUserByIdAsync(id);
+                if (user != null)
+                {
+                    Navigation.NavigateTo("/planner");
+                }
+            }
+        }
+    }
+
+    private void ToggleMode()
+    {
+        IsRegistering = !IsRegistering;
+        ErrorMessage = string.Empty;
+        Password = string.Empty;
+        ConfirmPassword = string.Empty;
+    }
+
+    private async Task HandleLogin()
+    {
+        ErrorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
+        {
+            ErrorMessage = "Please enter username and password";
+            return;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var user = await AuthService.LoginAsync(Username.Trim(), Password);
+            if (user != null)
+            {
+                await JS.InvokeVoidAsync("localStorage.setItem", "pfd_user_id", user.Id.ToString());
+                await JS.InvokeVoidAsync("localStorage.setItem", "pfd_username", user.Username);
+                Navigation.NavigateTo("/planner");
+            }
+            else
+            {
+                ErrorMessage = "Invalid username or password";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Login failed: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        ErrorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
+        {
+            ErrorMessage = "Please enter username and password";
+            return;
+        }
+
+        if (Username.Trim().Length < 3)
+        {
+            ErrorMessage = "Username must be at least 3 characters";
+            return;
+        }
+
+        if (Password.Length < 4)
+        {
+            ErrorMessage = "Password must be at least 4 characters";
+            return;
+        }
+
+        if (Password != ConfirmPassword)
+        {
+            ErrorMessage = "Passwords do not match";
+            return;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (await AuthService.UsernameExistsAsync(Username.Trim()))
+            {
+                ErrorMessage = "Username already taken";
+                IsLoading = false;
+                return;
+            }
+
+            var user = await AuthService.RegisterAsync(
+                Username.Trim(),
+                Password,
+                string.IsNullOrWhiteSpace(DisplayName) ? null : DisplayName.Trim());
+
+            if (user != null)
+            {
+                await JS.InvokeVoidAsync("localStorage.setItem", "pfd_user_id", user.Id.ToString());
+                await JS.InvokeVoidAsync("localStorage.setItem", "pfd_username", user.Username);
+                Navigation.NavigateTo("/planner");
+            }
+            else
+            {
+                ErrorMessage = "Registration failed";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Registration failed: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+}

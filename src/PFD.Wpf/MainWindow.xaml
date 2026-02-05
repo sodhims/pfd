@@ -59,6 +59,7 @@
                         CornerRadius="6"
                         Padding="10"
                         Margin="0,0,8,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <!-- View Mode -->
                         <TextBlock Text="View"
@@ -89,6 +90,7 @@
                                   Style="{StaticResource MaterialDesignOutlinedComboBox}"
                                   Width="200"
                                   HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Teal" Tag="GoldPinkTeal" IsSelected="True"/>
                             <ComboBoxItem Content="Red" Tag="Reddish"/>
                             <ComboBoxItem Content="Orange" Tag="Orangish"/>
                             <ComboBoxItem Content="Yellow" Tag="Yellowish"/>
@@ -96,7 +98,13 @@
                             <ComboBoxItem Content="Dark" Tag="Blackish"/>
                             <ComboBoxItem Content="Light" Tag="Whiteish"/>
                             <ComboBoxItem Content="Preppy" Tag="Preppy"/>
-                            <ComboBoxItem Content="Teal" Tag="GoldPinkTeal" IsSelected="True"/>
+                            <ComboBoxItem Content="Tropical" Tag="Tropical"/>
+                            <ComboBoxItem Content="Nordic" Tag="Nordic"/>
+                            <ComboBoxItem Content="Pinkish" Tag="Pinkish"/>
+                            <ComboBoxItem Content="Bigly" Tag="Bigly"/>
+                            <ComboBoxItem Content="Ughly" Tag="Ughly"/>
+                            <ComboBoxItem Content="Vampire" Tag="Vampire"/>
+                            <ComboBoxItem Content="Greek" Tag="Greek"/>
                         </ComboBox>
 
                         <!-- AI Insights Toggle -->
@@ -114,7 +122,89 @@
                                 <TextBlock Text="{Binding ShowAiPanel, Converter={StaticResource AiButtonTextConverter}}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+
+                        <!-- Google Calendar Integration -->
+                        <StackPanel Visibility="{Binding IsGoogleCalendarAvailable, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="Google Calendar"
+                                       FontWeight="Bold" FontSize="14"
+                                       Foreground="{DynamicResource TextLight}"
+                                       Margin="0,16,0,6"/>
+
+                            <!-- Not Connected State -->
+                            <StackPanel Visibility="{Binding IsGoogleConnected, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                <Button Command="{Binding ConnectGoogleCalendarCommand}"
+                                        Style="{StaticResource MaterialDesignRaisedButton}"
+                                        Background="#4285F4"
+                                        Foreground="White"
+                                        HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="Google" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Connect" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding CheckGoogleConnectionCommand}"
+                                        Content="Check Connection"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="{DynamicResource TextLight}"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,4,0,0"
+                                        FontSize="11"/>
+                            </StackPanel>
+
+                            <!-- Connected State -->
+                            <StackPanel Visibility="{Binding IsGoogleConnected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <Border Background="#34A853" CornerRadius="10" Padding="8,4" HorizontalAlignment="Left" Margin="0,0,0,8">
+                                    <TextBlock Text="Connected" Foreground="White" FontSize="11" FontWeight="Bold"/>
+                                </Border>
+                                <Button Command="{Binding ImportGoogleEventsCommand}"
+                                        IsEnabled="{Binding IsGoogleImporting, Converter={StaticResource InverseBooleanConverter}}"
+                                        Style="{StaticResource MaterialDesignRaisedButton}"
+                                        Background="#4285F4"
+                                        Foreground="White"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,4">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="Download" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="{Binding IsGoogleImporting, Converter={StaticResource ImportButtonTextConverter}}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding DisconnectGoogleCalendarCommand}"
+                                        Content="Disconnect"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Foreground="{DynamicResource TextLight}"
+                                        HorizontalAlignment="Left"
+                                        FontSize="11"/>
+                            </StackPanel>
+
+                            <!-- Import Message -->
+                            <TextBlock Text="{Binding GoogleImportMessage}"
+                                       Foreground="{DynamicResource TextLight}"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0"
+                                       Visibility="{Binding GoogleImportMessage, Converter={StaticResource StringToVisibilityConverter}}"/>
+                        </StackPanel>
+
+                        <!-- User Section -->
+                        <Border Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="White" Opacity="0.3"/>
+                        <TextBlock Text="Signed in as"
+                                   FontWeight="Bold" FontSize="12"
+                                   Foreground="{DynamicResource TextLight}"
+                                   Opacity="0.8"
+                                   Margin="0,12,0,4"/>
+                        <TextBlock Text="{Binding CurrentUsername}"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource TextLight}"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,8"/>
+                        <Button Command="{Binding LogoutCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Foreground="{DynamicResource TextLight}"
+                                BorderBrush="{DynamicResource TextLight}"
+                                HorizontalAlignment="Left"
+                                Content="Logout"/>
                     </StackPanel>
+                    </ScrollViewer>
                 </Border>
             </Grid>
 
@@ -826,6 +916,122 @@
                             <Button Content="Save"
                                     Command="{Binding SaveTaskTimeCommand}"
                                     Style="{StaticResource MaterialDesignRaisedButton}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Login Overlay (shown when not logged in) -->
+            <Grid Grid.ColumnSpan="3"
+                  Visibility="{Binding IsLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <Border Background="#E0F0F0F0"/>
+                <Border Background="{DynamicResource TaskListBg}"
+                        CornerRadius="12"
+                        Padding="30"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MinWidth="350"
+                        materialDesign:ElevationAssist.Elevation="Dp12">
+                    <StackPanel>
+                        <!-- Logo/Title -->
+                        <StackPanel HorizontalAlignment="Center" Margin="0,0,0,20">
+                            <materialDesign:PackIcon Kind="CalendarCheck" Width="48" Height="48"
+                                                     HorizontalAlignment="Center"
+                                                     Foreground="{DynamicResource TextPrimary}"/>
+                            <TextBlock Text="PFD Planner" FontSize="24" FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}" Margin="0,8,0,0"/>
+                            <TextBlock Text="Personal Daily Planner" FontSize="14"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimary}" Opacity="0.7"/>
+                        </StackPanel>
+
+                        <!-- Login Form -->
+                        <StackPanel Visibility="{Binding IsLoginMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBox Text="{Binding LoginUsername, UpdateSourceTrigger=PropertyChanged}"
+                                     materialDesign:HintAssist.Hint="Username"
+                                     Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                     Margin="0,0,0,12">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding LoginCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <PasswordBox x:Name="LoginPasswordBox"
+                                         materialDesign:HintAssist.Hint="Password"
+                                         Style="{StaticResource MaterialDesignOutlinedPasswordBox}"
+                                         Margin="0,0,0,12"
+                                         PasswordChanged="LoginPasswordBox_PasswordChanged">
+                                <PasswordBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding LoginCommand}"/>
+                                </PasswordBox.InputBindings>
+                            </PasswordBox>
+
+                            <!-- Error message -->
+                            <TextBlock Text="{Binding LoginError}"
+                                       Foreground="#D32F2F"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,12"
+                                       Visibility="{Binding LoginError, Converter={StaticResource StringToVisibilityConverter}}"/>
+
+                            <Button Content="Login"
+                                    Command="{Binding LoginCommand}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,0,0,12"/>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock Text="Don't have an account? " FontSize="12"
+                                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                <Button Content="Register"
+                                        Command="{Binding ToggleLoginModeCommand}"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Padding="4,0"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Register Form -->
+                        <StackPanel Visibility="{Binding IsLoginMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBox Text="{Binding LoginUsername, UpdateSourceTrigger=PropertyChanged}"
+                                     materialDesign:HintAssist.Hint="Username"
+                                     Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                     Margin="0,0,0,12">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding RegisterCommand}"/>
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <PasswordBox x:Name="RegisterPasswordBox"
+                                         materialDesign:HintAssist.Hint="Password"
+                                         Style="{StaticResource MaterialDesignOutlinedPasswordBox}"
+                                         Margin="0,0,0,12"
+                                         PasswordChanged="RegisterPasswordBox_PasswordChanged">
+                                <PasswordBox.InputBindings>
+                                    <KeyBinding Key="Return" Command="{Binding RegisterCommand}"/>
+                                </PasswordBox.InputBindings>
+                            </PasswordBox>
+
+                            <!-- Error message -->
+                            <TextBlock Text="{Binding LoginError}"
+                                       Foreground="#D32F2F"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,12"
+                                       Visibility="{Binding LoginError, Converter={StaticResource StringToVisibilityConverter}}"/>
+
+                            <Button Content="Register"
+                                    Command="{Binding RegisterCommand}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,0,0,12"/>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock Text="Already have an account? " FontSize="12"
+                                           Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                <Button Content="Login"
+                                        Command="{Binding ToggleLoginModeCommand}"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Padding="4,0"/>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </Border>

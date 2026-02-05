@@ -1,0 +1,127 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Frame Colors (CHAOS - Magenta/Lime) -->
+    <SolidColorBrush x:Key="FrameBg" Color="#FF00FF"/>
+    <SolidColorBrush x:Key="FrameBorder" Color="#00FF00"/>
+
+    <!-- Calendar Section (CHAOS - Yellow/Orange/Cyan) -->
+    <SolidColorBrush x:Key="CalendarBg" Color="#FFFF00"/>
+    <SolidColorBrush x:Key="CalendarHeaderBg" Color="#FF6600"/>
+    <SolidColorBrush x:Key="CalendarDayBg" Color="#00FFFF"/>
+    <SolidColorBrush x:Key="CalendarSelectedDay" Color="#FF0000"/>
+    <SolidColorBrush x:Key="CalendarTodayBg" Color="#7FFF00"/>
+
+    <!-- Task Section (CHAOS - Lime/Blue/HotPink) -->
+    <SolidColorBrush x:Key="TaskListBg" Color="#00FF00"/>
+    <SolidColorBrush x:Key="TaskHeaderBg" Color="#0000FF"/>
+    <SolidColorBrush x:Key="TaskRowBg" Color="#FF69B4"/>
+    <SolidColorBrush x:Key="TaskRowHoverBg" Color="#FFD700"/>
+    <SolidColorBrush x:Key="TaskRowCompletedBg" Color="#8B008B"/>
+    <SolidColorBrush x:Key="TaskRowCompletedText" Color="#FFFFFF"/>
+
+    <!-- Text Colors -->
+    <SolidColorBrush x:Key="TextPrimary" Color="#000000"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#0000FF"/>
+    <SolidColorBrush x:Key="TextLight" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextHeader" Color="#FF0000"/>
+
+    <!-- Checkbox Styling -->
+    <SolidColorBrush x:Key="CheckboxBorder" Color="#FF00FF"/>
+    <SolidColorBrush x:Key="CheckboxChecked" Color="#00FF00"/>
+    <SolidColorBrush x:Key="CheckboxUnchecked" Color="#FFFF00"/>
+
+    <!-- Button Styling -->
+    <SolidColorBrush x:Key="ButtonBg" Color="#FF4500"/>
+    <SolidColorBrush x:Key="ButtonHoverBg" Color="#FFD700"/>
+    <SolidColorBrush x:Key="ButtonText" Color="#000000"/>
+
+    <!-- Input Styling -->
+    <SolidColorBrush x:Key="InputBg" Color="#00FFFF"/>
+    <SolidColorBrush x:Key="InputBorder" Color="#FF0000"/>
+
+    <!-- Common Styles - Comic Sans for maximum chaos -->
+    <Style x:Key="HeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Comic Sans MS"/>
+        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextHeader}"/>
+    </Style>
+
+    <Style x:Key="TaskTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Comic Sans MS"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Checkbox Style -->
+    <Style x:Key="TaskCheckboxStyle" TargetType="CheckBox">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="5,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Border x:Name="border"
+                                Width="24" Height="24"
+                                BorderThickness="3"
+                                BorderBrush="{DynamicResource CheckboxBorder}"
+                                Background="{DynamicResource CheckboxUnchecked}"
+                                CornerRadius="0">
+                            <Path x:Name="checkMark"
+                                  Data="M 2,6 L 6,10 L 12,2"
+                                  Stroke="{DynamicResource CheckboxChecked}"
+                                  StrokeThickness="4"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="checkMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource TaskRowCompletedBg}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource CheckboxChecked}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Calendar Day Button Style - Chaotic circles -->
+    <Style x:Key="CalendarDayButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="40"/>
+        <Setter Property="Height" Value="40"/>
+        <Setter Property="Margin" Value="2"/>
+        <Setter Property="FontFamily" Value="Comic Sans MS"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Background" Value="{DynamicResource CalendarDayBg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderThickness" Value="3"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource FrameBorder}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="20">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource CalendarSelectedDay}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextLight}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

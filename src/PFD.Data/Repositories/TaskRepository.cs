@@ -12,13 +12,29 @@ public class TaskRepository
         _context = context;
     }
 
-    public async Task<List<DailyTask>> GetTasksForDateAsync(DateTime date)
+    /// <summary>
+    /// Get the group IDs that a user belongs to (for including shared tasks in queries)
+    /// </summary>
+    private async Task<List<int>> GetUserGroupIdsAsync(int userId)
     {
+        return await _context.GroupMembers
+            .Where(gm => gm.UserId == userId)
+            .Select(gm => gm.GroupId)
+            .ToListAsync();
+    }
+
+    public async Task<List<DailyTask>> GetTasksForDateAsync(DateTime date, int userId)
+    {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
         // Fetch data first, then order client-side (SQLite doesn't support TimeSpan in ORDER BY)
         var tasks = await _context.DailyTasks
-            .Where(t => t.TaskDate.Date == date.Date)
+            .Where(t => t.TaskDate.Date == date.Date &&
+                        t.ParentTaskId == null &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
             .ToListAsync();
 
         return tasks
@@ -29,13 +45,17 @@ public class TaskRepository
             .ToList();
     }
 
-    public async Task<List<DailyTask>> GetTasksForDateRangeAsync(DateTime startDate, DateTime endDate)
+    public async Task<List<DailyTask>> GetTasksForDateRangeAsync(DateTime startDate, DateTime endDate, int userId)
     {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
         // Fetch data first, then order client-side (SQLite doesn't support TimeSpan in ORDER BY)
         var tasks = await _context.DailyTasks
-            .Where(t => t.TaskDate.Date >= startDate.Date && t.TaskDate.Date <= endDate.Date)
+            .Where(t => t.TaskDate.Date >= startDate.Date && t.TaskDate.Date <= endDate.Date &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
             .ToListAsync();
 
         return tasks
@@ -47,23 +67,31 @@ public class TaskRepository
             .ToList();
     }
 
-    public async Task<List<DailyTask>> GetOverdueTasksAsync(DateTime beforeDate)
+    public async Task<List<DailyTask>> GetOverdueTasksAsync(DateTime beforeDate, int userId)
     {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
         return await _context.DailyTasks
-            .Where(t => t.TaskDate.Date < beforeDate.Date && !t.IsCompleted)
+            .Where(t => t.TaskDate.Date < beforeDate.Date && !t.IsCompleted &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderBy(t => t.TaskDate)
             .ThenBy(t => t.SortOrder)
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
             .ToListAsync();
     }
 
-    public async Task<DailyTask?> GetByIdAsync(int id)
+    public async Task<DailyTask?> GetByIdAsync(int id, int userId)
     {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
         return await _context.DailyTasks
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
-            .FirstOrDefaultAsync(t => t.Id == id);
+            .Include(t => t.Group)
+            .FirstOrDefaultAsync(t => t.Id == id &&
+                (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
     }
 
     public async Task<DailyTask> CreateAsync(DailyTask task)
@@ -84,9 +112,13 @@ public class TaskRepository
         return task;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, int userId)
     {
-        var task = await _context.DailyTasks.FindAsync(id);
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
+        var task = await _context.DailyTasks
+            .FirstOrDefaultAsync(t => t.Id == id &&
+                (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
         if (task != null)
         {
             _context.DailyTasks.Remove(task);
@@ -94,9 +126,13 @@ public class TaskRepository
         }
     }
 
-    public async Task<DailyTask?> ToggleCompletionAsync(int id)
+    public async Task<DailyTask?> ToggleCompletionAsync(int id, int userId)
     {
-        var task = await _context.DailyTasks.FindAsync(id);
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
+
+        var task = await _context.DailyTasks
+            .FirstOrDefaultAsync(t => t.Id == id &&
+                (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
         if (task != null)
         {
             task.IsCompleted = !task.IsCompleted;
@@ -107,27 +143,35 @@ public class TaskRepository
         return task;
     }
 
-    public async Task<List<DailyTask>> GetRecentTasksAsync(int days = 30)
+    public async Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30)
     {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
         var startDate = DateTime.Today.AddDays(-days);
+
         return await _context.DailyTasks
-            .Where(t => t.TaskDate.Date >= startDate)
+            .Where(t => t.TaskDate.Date >= startDate &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderByDescending(t => t.TaskDate)
             .ThenBy(t => t.SortOrder)
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
             .ToListAsync();
     }
 
-    public async Task<List<DailyTask>> GetUpcomingTasksAsync(int days = 14)
+    public async Task<List<DailyTask>> GetUpcomingTasksAsync(int userId, int days = 14)
     {
+        var userGroupIds = await GetUserGroupIdsAsync(userId);
         var endDate = DateTime.Today.AddDays(days);
+
         return await _context.DailyTasks
-            .Where(t => t.TaskDate.Date >= DateTime.Today && t.TaskDate.Date <= endDate && !t.IsCompleted)
+            .Where(t => t.TaskDate.Date >= DateTime.Today && t.TaskDate.Date <= endDate && !t.IsCompleted &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderBy(t => t.TaskDate)
             .ThenBy(t => t.SortOrder)
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
             .ToListAsync();
     }
 }

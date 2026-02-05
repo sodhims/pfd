@@ -1096,12 +1096,14 @@
     display: flex;
     gap: 16px;
     padding: 16px;
-    min-height: calc(100vh - 80px);
+    min-height: calc(100vh - 40px);
+    height: calc(100vh - 40px);
     background: var(--frame-bg);
     border: 3px solid var(--frame-border);
     border-radius: 8px;
     margin: 8px;
     position: relative;
+    align-items: stretch;
 }
 
 /* Left Panel */
@@ -1110,6 +1112,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow-y: auto;
+    max-height: calc(100vh - 72px);
+    flex-shrink: 0;
 }
 
 .calendar-section {
@@ -1280,7 +1285,9 @@
     display: flex !important;
     flex-direction: row !important;
     gap: 0;
-    height: calc(100vh - 120px);
+    height: 100%;
+    min-height: calc(100vh - 60px);
+    align-self: stretch;
     width: 340px !important;
     min-width: 340px !important;
     flex-shrink: 0 !important;
@@ -1290,6 +1297,7 @@
     width: 80px !important;
     min-width: 80px !important;
     max-width: 80px !important;
+    height: 100%;
     background: var(--task-header-bg, #26a69a);
     border-radius: 12px 0 0 12px;
     display: flex !important;
@@ -1424,9 +1432,68 @@
     color: #fff;
     text-shadow: 0 1px 2px rgba(0,0,0,0.5);
     position: relative;
-    transition: background 0.15s, transform 0.15s;
+    transition: all 0.2s ease-out;
     padding: 2px 0;
     overflow: hidden;
+    cursor: pointer;
+}
+
+/* Curved surface effect - narrower at edges using nth-child */
+.day-roller-track .day-slot:nth-child(1),
+.day-roller-track .day-slot:nth-child(15) {
+    transform: scale(0.65) perspective(200px) rotateX(15deg);
+    opacity: 0.3;
+    margin: 0 8px;
+}
+
+.day-roller-track .day-slot:nth-child(2),
+.day-roller-track .day-slot:nth-child(14) {
+    transform: scale(0.72) perspective(200px) rotateX(10deg);
+    opacity: 0.4;
+    margin: 0 6px;
+}
+
+.day-roller-track .day-slot:nth-child(3),
+.day-roller-track .day-slot:nth-child(13) {
+    transform: scale(0.78) perspective(200px) rotateX(6deg);
+    opacity: 0.5;
+    margin: 0 5px;
+}
+
+.day-roller-track .day-slot:nth-child(4),
+.day-roller-track .day-slot:nth-child(12) {
+    transform: scale(0.84) perspective(200px) rotateX(4deg);
+    opacity: 0.6;
+    margin: 0 4px;
+}
+
+.day-roller-track .day-slot:nth-child(5),
+.day-roller-track .day-slot:nth-child(11) {
+    transform: scale(0.90) perspective(200px) rotateX(2deg);
+    opacity: 0.75;
+    margin: 0 3px;
+}
+
+.day-roller-track .day-slot:nth-child(6),
+.day-roller-track .day-slot:nth-child(10) {
+    transform: scale(0.95);
+    opacity: 0.85;
+    margin: 0 2px;
+}
+
+.day-roller-track .day-slot:nth-child(7),
+.day-roller-track .day-slot:nth-child(9) {
+    transform: scale(0.98);
+    opacity: 0.95;
+    margin: 0 1px;
+}
+
+/* Center slot (selected) - full size */
+.day-roller-track .day-slot:nth-child(8) {
+    transform: scale(1.02);
+    opacity: 1;
+    margin: 0;
+    z-index: 2;
 }
 
 /* Static day roller track - simple display, no drag */
@@ -1477,13 +1544,14 @@
 }
 
 .day-slot:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .day-slot.selected {
-    background: rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.3);
     color: white;
-    transform: scale(1.05);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
 }
 
 .day-slot.today {
@@ -1569,6 +1637,7 @@
     flex-direction: column !important;
     width: 260px !important;
     min-width: 260px !important;
+    height: 100%;
     background: white;
     border-radius: 0 12px 12px 0;
     overflow: hidden;
@@ -2035,16 +2104,33 @@
 .task-list {
     flex: 1;
     overflow-y: auto;
+    max-height: calc(100vh - 280px);
+    scroll-behavior: smooth;
+}
+
+.task-list:focus {
+    outline: none;
+}
+
+/* Scrollable task sections */
+.scheduled-section,
+.allday-section,
+.waiting-section {
+    max-height: calc(100vh - 350px);
+    overflow-y: auto;
+    scroll-behavior: smooth;
 }
 
 .task-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
     background: var(--task-row-bg);
-    padding: 12px;
+    padding: 4px 8px;
     border-radius: 6px;
-    margin-bottom: 8px;
+    margin-bottom: 2px;
+    min-height: 32px;
+    max-height: 36px;
 }
 
 .task-row.completed {
@@ -2114,6 +2200,100 @@
 }
 
 .delete-btn:hover {
+    opacity: 1;
+}
+
+.delete-btn.small {
+    font-size: 14px;
+    padding: 2px 6px;
+}
+
+/* Subtask Styles */
+.subtask-row {
+    margin-left: 30px;
+    background: rgba(255, 255, 255, 0.5);
+    border-left: 3px solid var(--button-bg);
+    padding: 8px 12px;
+}
+
+.subtask-row.adding {
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.subtask-indent {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    opacity: 0.4;
+}
+
+.subtask-indent::before {
+    content: "└";
+    font-family: monospace;
+}
+
+.subtask-title {
+    font-size: 13px;
+}
+
+.subtask-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--button-bg);
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+}
+
+.subtask-btn {
+    background: var(--button-bg);
+    color: var(--text-light);
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.subtask-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.save-subtask-btn {
+    background: var(--button-bg);
+    color: var(--text-light);
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.save-subtask-btn:hover {
+    background: var(--button-hover);
+}
+
+.cancel-subtask-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0.6;
+    padding: 4px 8px;
+}
+
+.cancel-subtask-btn:hover {
     opacity: 1;
 }
 
@@ -2833,6 +3013,68 @@
     color: white;
 }
 
+/* Task Section Tabs (Scheduled, Tasks, Waiting) */
+.task-section-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.section-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #666;
+    transition: all 0.2s;
+    flex: 1;
+    justify-content: center;
+}
+
+.section-tab:hover {
+    background: rgba(0,0,0,0.05);
+    color: #333;
+}
+
+.section-tab.active {
+    background: white;
+    color: #333;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.section-tab .tab-icon {
+    font-size: 14px;
+}
+
+.section-tab .tab-count {
+    background: rgba(0,0,0,0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.section-tab.active .tab-count {
+    background: var(--primary-color, #00897B);
+    color: white;
+}
+
+/* Empty section message */
+.empty-section {
+    padding: 20px;
+    text-align: center;
+    color: #999;
+    font-style: italic;
+}
+
 /* External Events List */
 .external-events-list {
     padding: 12px;
@@ -3248,4 +3490,416 @@
 
 .high-contrast .slot-task.google .t-src {
     background: #666 !important;
+}
+
+/* ==================== GROUP STYLES ==================== */
+
+.group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.group-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--task-row-bg);
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.group-item .group-name {
+    flex: 1;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.leader-badge {
+    font-size: 0.7em;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: var(--button-bg);
+    color: var(--text-light);
+    font-weight: 600;
+}
+
+.manage-group-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 1em;
+    padding: 0 4px;
+    opacity: 0.6;
+}
+
+.manage-group-btn:hover {
+    opacity: 1;
+}
+
+.create-group-btn {
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: var(--button-bg);
+    color: var(--text-light);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    width: 100%;
+}
+
+.create-group-btn:hover {
+    background: var(--button-hover);
+}
+
+/* Shared task indicator */
+.shared-task {
+    border-left: 3px solid var(--button-bg) !important;
+}
+
+.group-badge {
+    font-size: 0.65em;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--button-bg);
+    color: var(--text-light);
+    white-space: nowrap;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.share-btn, .unshare-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 2px 4px;
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.share-btn:hover, .unshare-btn:hover {
+    opacity: 1;
+}
+
+/* Group Modal */
+.group-modal {
+    background: var(--task-list-bg);
+    border-radius: 12px;
+    padding: 0;
+    min-width: 340px;
+    max-width: 420px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.group-modal .modal-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.group-modal .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.group-modal .form-row label {
+    font-size: 0.85em;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.group-modal .form-row input {
+    padding: 8px;
+    border: 1px solid var(--frame-border);
+    border-radius: 6px;
+    font-size: 0.95em;
+}
+
+.group-info {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.member-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.member-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--task-row-bg);
+    border-radius: 4px;
+}
+
+.member-item .member-name {
+    flex: 1;
+    color: var(--text-primary);
+    font-size: 0.9em;
+}
+
+.remove-member-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #c0392b;
+    font-size: 0.9em;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.remove-member-btn:hover {
+    background: rgba(192, 57, 43, 0.1);
+}
+
+.add-member-row {
+    display: flex;
+    gap: 6px;
+}
+
+.add-member-row input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--frame-border);
+    border-radius: 6px;
+    font-size: 0.85em;
+}
+
+.add-member-btn {
+    padding: 6px 12px;
+    background: var(--button-bg);
+    color: var(--text-light);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+
+.add-member-btn:hover {
+    background: var(--button-hover);
+}
+
+.group-modal-message {
+    font-size: 0.8em;
+    color: var(--text-primary);
+    padding: 4px 8px;
+    background: var(--task-row-bg);
+    border-radius: 4px;
+}
+
+.delete-group-btn {
+    padding: 6px 12px;
+    background: #c0392b;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85em;
+    margin-top: 8px;
+}
+
+.delete-group-btn:hover {
+    background: #e74c3c;
+}
+
+/* Share Modal */
+.share-modal .share-task-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.share-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.share-group-option {
+    padding: 10px 14px;
+    background: var(--task-row-bg);
+    border: 1px solid var(--frame-border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.95em;
+    text-align: left;
+}
+
+.share-group-option:hover {
+    background: var(--button-bg);
+    color: var(--text-light);
+}
+
+/* Quick Schedule Modal */
+.quick-schedule-modal {
+    background: white;
+    border-radius: 12px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+
+.quick-schedule-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--button-bg, #00897B);
+    color: white;
+    border-radius: 12px 12px 0 0;
+    font-weight: 600;
+}
+
+.quick-schedule-modal .modal-header .close-btn {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.quick-schedule-modal .modal-body {
+    padding: 16px;
+}
+
+.quick-schedule-modal .task-preview {
+    padding: 8px 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.quick-schedule-modal .option-group {
+    margin-bottom: 16px;
+}
+
+.quick-schedule-modal .option-group label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.quick-schedule-modal .option-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.quick-schedule-modal .option-buttons button {
+    flex: 1;
+    min-width: 70px;
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.quick-schedule-modal .option-buttons button:hover {
+    border-color: var(--button-bg, #00897B);
+    background: rgba(0, 137, 123, 0.05);
+}
+
+.quick-schedule-modal .option-buttons button.active {
+    background: var(--button-bg, #00897B);
+    color: white;
+    border-color: var(--button-bg, #00897B);
+}
+
+.quick-schedule-modal .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #f5f5f5;
+    border-radius: 0 0 12px 12px;
+}
+
+.quick-schedule-modal .cancel-btn {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.quick-schedule-modal .save-btn {
+    padding: 8px 16px;
+    border: none;
+    background: var(--button-bg, #00897B);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.quick-schedule-modal .save-btn:hover {
+    opacity: 0.9;
+}
+
+/* Quick Schedule Button */
+.quick-schedule-btn {
+    background: transparent;
+    border: 1px dashed var(--button-bg, #00897B);
+    border-radius: 4px;
+    padding: 2px 6px;
+    cursor: pointer;
+    opacity: 0.7;
+    font-size: 14px;
+}
+
+.quick-schedule-btn:hover {
+    opacity: 1;
+    background: rgba(0, 137, 123, 0.1);
+}
+
+/* Duration buttons - more compact */
+.quick-schedule-modal .duration-buttons button {
+    min-width: 50px;
+    padding: 8px 8px;
+}
+
+/* No slot available dialog */
+.no-slot-message {
+    text-align: center;
+    padding: 16px;
+}
+
+.no-slot-message .warning-icon {
+    font-size: 32px;
+    color: #FF9800;
+    display: block;
+    margin-bottom: 12px;
+}
+
+.no-slot-message p {
+    margin: 8px 0;
+    color: #666;
+}
+
+.no-slot-message p:first-of-type {
+    font-weight: 600;
+    color: #333;
 }

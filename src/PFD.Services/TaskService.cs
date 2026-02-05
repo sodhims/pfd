@@ -13,24 +13,24 @@ public class TaskService : ITaskService
         _taskRepository = taskRepository;
     }
 
-    public async Task<List<DailyTask>> GetTasksForDateAsync(DateTime date)
+    public async Task<List<DailyTask>> GetTasksForDateAsync(DateTime date, int userId)
     {
-        return await _taskRepository.GetTasksForDateAsync(date);
+        return await _taskRepository.GetTasksForDateAsync(date, userId);
     }
 
-    public async Task<List<DailyTask>> GetTasksForDateRangeAsync(DateTime startDate, DateTime endDate)
+    public async Task<List<DailyTask>> GetTasksForDateRangeAsync(DateTime startDate, DateTime endDate, int userId)
     {
-        return await _taskRepository.GetTasksForDateRangeAsync(startDate, endDate);
+        return await _taskRepository.GetTasksForDateRangeAsync(startDate, endDate, userId);
     }
 
-    public async Task<List<DailyTask>> GetOverdueTasksAsync(DateTime beforeDate)
+    public async Task<List<DailyTask>> GetOverdueTasksAsync(DateTime beforeDate, int userId)
     {
-        return await _taskRepository.GetOverdueTasksAsync(beforeDate);
+        return await _taskRepository.GetOverdueTasksAsync(beforeDate, userId);
     }
 
-    public async Task<DailyTask?> GetTaskByIdAsync(int id)
+    public async Task<DailyTask?> GetTaskByIdAsync(int id, int userId)
     {
-        return await _taskRepository.GetByIdAsync(id);
+        return await _taskRepository.GetByIdAsync(id, userId);
     }
 
     public async Task<DailyTask> CreateTaskAsync(DailyTask task)
@@ -43,20 +43,20 @@ public class TaskService : ITaskService
         return await _taskRepository.UpdateAsync(task);
     }
 
-    public async Task DeleteTaskAsync(int id)
+    public async Task DeleteTaskAsync(int id, int userId)
     {
-        await _taskRepository.DeleteAsync(id);
+        await _taskRepository.DeleteAsync(id, userId);
     }
 
-    public async Task<DailyTask> ToggleCompletionAsync(int id)
+    public async Task<DailyTask> ToggleCompletionAsync(int id, int userId)
     {
-        var task = await _taskRepository.ToggleCompletionAsync(id);
+        var task = await _taskRepository.ToggleCompletionAsync(id, userId);
         return task ?? throw new InvalidOperationException($"Task {id} not found");
     }
 
-    public async Task RescheduleTaskAsync(int taskId, DateTime newDate)
+    public async Task RescheduleTaskAsync(int taskId, DateTime newDate, int userId)
     {
-        var task = await _taskRepository.GetByIdAsync(taskId);
+        var task = await _taskRepository.GetByIdAsync(taskId, userId);
         if (task != null)
         {
             task.TaskDate = newDate;
@@ -64,9 +64,9 @@ public class TaskService : ITaskService
         }
     }
 
-    public async Task ScheduleTaskTimeAsync(int taskId, TimeSpan? time, int durationMinutes = 30)
+    public async Task ScheduleTaskTimeAsync(int taskId, TimeSpan? time, int userId, int durationMinutes = 30)
     {
-        var task = await _taskRepository.GetByIdAsync(taskId);
+        var task = await _taskRepository.GetByIdAsync(taskId, userId);
         if (task != null)
         {
             task.ScheduledTime = time;
@@ -76,13 +76,13 @@ public class TaskService : ITaskService
         }
     }
 
-    public async Task<List<DailyTask>> GetRecentTasksAsync(int days = 30)
+    public async Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30)
     {
-        return await _taskRepository.GetRecentTasksAsync(days);
+        return await _taskRepository.GetRecentTasksAsync(userId, days);
     }
 
-    public async Task<List<DailyTask>> GetUpcomingTasksAsync(int days = 14)
+    public async Task<List<DailyTask>> GetUpcomingTasksAsync(int userId, int days = 14)
     {
-        return await _taskRepository.GetUpcomingTasksAsync(days);
+        return await _taskRepository.GetUpcomingTasksAsync(userId, days);
     }
 }

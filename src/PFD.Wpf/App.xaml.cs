@@ -51,8 +51,56 @@ public partial class App : Application
 
         // Services
         services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<IOllamaService>(sp => new OllamaService());
         services.AddSingleton<IAnalysisService>(sp => new AnalysisService());
+
+        // External Calendar Services - configure with your credentials
+        var googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+        var googleClientSecret = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");
+        var googleRedirectUri = "http://localhost:5000/auth/google/callback";
+
+        var msClientId = Environment.GetEnvironmentVariable("MS_CLIENT_ID");
+        var msClientSecret = Environment.GetEnvironmentVariable("MS_CLIENT_SECRET");
+        var msTenantId = Environment.GetEnvironmentVariable("MS_TENANT_ID") ?? "common";
+        var msRedirectUri = "http://localhost:5000/auth/microsoft/callback";
+
+        if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientSecret))
+        {
+            services.AddScoped<IGoogleCalendarService>(sp =>
+            {
+                var taskService = sp.GetRequiredService<ITaskService>();
+                return new GoogleCalendarService(taskService, googleClientId, googleClientSecret, googleRedirectUri);
+            });
+        }
+
+        if (!string.IsNullOrEmpty(msClientId) && !string.IsNullOrEmpty(msClientSecret))
+        {
+            services.AddScoped<MicrosoftCalendarService>(sp =>
+                new MicrosoftCalendarService(msClientId, msClientSecret, msTenantId, msRedirectUri));
+        }
+
+        // Register CalendarSyncService
+        services.AddScoped<ICalendarSyncService>(sp =>
+        {
+            var taskService = sp.GetRequiredService<ITaskService>();
+            var syncService = new CalendarSyncService(taskService);
+
+            // Register available calendar services
+            var googleSvc = sp.GetService<IGoogleCalendarService>();
+            if (googleSvc is GoogleCalendarService gcs)
+            {
+                syncService.RegisterCalendarService(gcs);
+            }
+
+            var msSvc = sp.GetService<MicrosoftCalendarService>();
+            if (msSvc != null)
+            {
+                syncService.RegisterCalendarService(msSvc);
+            }
+
+            return syncService;
+        });
 
         // ViewModels
         services.AddTransient<MainViewModel>();

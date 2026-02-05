@@ -1,0 +1,271 @@
+@page "/planner"
+@inject ITaskService TaskService
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="mobile-planner theme-@CurrentTheme">
+    <!-- Header -->
+    <div class="mobile-header">
+        <div class="header-left">
+            <span class="date-display">@SelectedDate.ToString("MMM d")</span>
+        </div>
+        <div class="header-center">
+            <h1>@GetHeaderText()</h1>
+        </div>
+        <div class="header-right">
+            <button class="icon-btn" @onclick="ToggleSettings">⚙️</button>
+        </div>
+    </div>
+
+    <!-- Date Navigation -->
+    <div class="date-nav">
+        <button class="nav-btn" @onclick="PreviousDay">&lt;</button>
+        <button class="today-btn" @onclick="GoToToday">Today</button>
+        <button class="nav-btn" @onclick="NextDay">&gt;</button>
+    </div>
+
+    <!-- Add Task -->
+    <div class="add-task-section">
+        <input type="text" @bind="NewTaskText" @bind:event="oninput"
+               @onkeydown="HandleKeyDown" placeholder="Add a new task..." />
+        <button class="add-btn" @onclick="AddTask">+</button>
+    </div>
+
+    <!-- Overdue Section -->
+    @if (OverdueTasks.Any())
+    {
+        <div class="overdue-section">
+            <div class="section-header overdue-header">
+                <span>⚠️ Overdue (@OverdueTasks.Count)</span>
+            </div>
+            @foreach (var task in OverdueTasks)
+            {
+                <div class="task-item overdue">
+                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
+                    <span class="task-text">@task.Title</span>
+                    <span class="task-date">@task.TaskDate.ToString("M/d")</span>
+                    <button class="move-btn" @onclick="() => MoveToToday(task)">→</button>
+                    <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">🗑</button>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Task List -->
+    <div class="task-list">
+        @if (Tasks.Any())
+        {
+            @foreach (var task in Tasks)
+            {
+                <div class="task-item @(task.IsCompleted ? "completed" : "")">
+                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                    <span class="task-text @(task.IsCompleted ? "strikethrough" : "")">@task.Title</span>
+                    @if (task.ScheduledTime.HasValue)
+                    {
+                        <span class="task-time">@FormatTime(task.ScheduledTime)</span>
+                    }
+                    <button class="delete-btn" @onclick="() => DeleteTask(task)">🗑</button>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="empty-state">
+                <p>No tasks for today</p>
+                <p class="hint">Add one above!</p>
+            </div>
+        }
+    </div>
+
+    <!-- Settings Panel (Overlay) -->
+    @if (ShowSettings)
+    {
+        <div class="settings-overlay" @onclick="ToggleSettings">
+            <div class="settings-panel" @onclick:stopPropagation="true">
+                <div class="settings-header">
+                    <h2>Settings</h2>
+                    <button class="close-btn" @onclick="ToggleSettings">✕</button>
+                </div>
+
+                <div class="settings-content">
+                    <div class="setting-group">
+                        <label>Theme</label>
+                        <select @bind="CurrentTheme" @bind:after="SaveSettings">
+                            <option value="teal">Teal</option>
+                            <option value="blue">Blue</option>
+                            <option value="red">Red</option>
+                            <option value="orange">Orange</option>
+                            <option value="dark">Dark</option>
+                            <option value="light">Light</option>
+                            <option value="tropical">Tropical</option>
+                            <option value="nordic">Nordic</option>
+                            <option value="pinkish">Pinkish</option>
+                            <option value="bigly">Bigly</option>
+                            <option value="vampire">Vampire</option>
+                            <option value="greek">Greek</option>
+                        </select>
+                    </div>
+
+                    <div class="user-info">
+                        <p>Signed in as <strong>@Login.CurrentUsername</strong></p>
+                        <button class="logout-btn" @onclick="Logout">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private string CurrentTheme { get; set; } = "teal";
+    private string NewTaskText { get; set; } = "";
+    private List<DailyTask> Tasks { get; set; } = new();
+    private List<DailyTask> OverdueTasks { get; set; } = new();
+    private bool ShowSettings { get; set; } = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if logged in
+        if (Login.CurrentUserId == 0)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        // Load user settings
+        var user = await AuthService.GetUserByIdAsync(Login.CurrentUserId);
+        if (user != null)
+        {
+            CurrentTheme = user.Theme;
+        }
+
+        await LoadTasksAsync();
+    }
+
+    private async Task LoadTasksAsync()
+    {
+        if (Login.CurrentUserId == 0) return;
+
+        Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, Login.CurrentUserId);
+
+        if (SelectedDate.Date == DateTime.Today)
+        {
+            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, Login.CurrentUserId);
+        }
+        else
+        {
+            OverdueTasks.Clear();
+        }
+    }
+
+    private string GetHeaderText()
+    {
+        if (SelectedDate.Date == DateTime.Today)
+            return "Today";
+        if (SelectedDate.Date == DateTime.Today.AddDays(1))
+            return "Tomorrow";
+        if (SelectedDate.Date == DateTime.Today.AddDays(-1))
+            return "Yesterday";
+        return SelectedDate.ToString("dddd");
+    }
+
+    private void PreviousDay()
+    {
+        SelectedDate = SelectedDate.AddDays(-1);
+        _ = LoadTasksAsync();
+    }
+
+    private void NextDay()
+    {
+        SelectedDate = SelectedDate.AddDays(1);
+        _ = LoadTasksAsync();
+    }
+
+    private void GoToToday()
+    {
+        SelectedDate = DateTime.Today;
+        _ = LoadTasksAsync();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddTask();
+        }
+    }
+
+    private async Task AddTask()
+    {
+        if (string.IsNullOrWhiteSpace(NewTaskText) || Login.CurrentUserId == 0) return;
+
+        var task = new DailyTask
+        {
+            Title = NewTaskText,
+            TaskDate = SelectedDate,
+            IsCompleted = false,
+            SortOrder = Tasks.Count,
+            IsAllDay = true,
+            UserId = Login.CurrentUserId
+        };
+
+        await TaskService.CreateTaskAsync(task);
+        NewTaskText = "";
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleTask(DailyTask task)
+    {
+        await TaskService.ToggleCompletionAsync(task.Id, Login.CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private async Task DeleteTask(DailyTask task)
+    {
+        await TaskService.DeleteTaskAsync(task.Id, Login.CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleOverdueTask(DailyTask task)
+    {
+        await TaskService.ToggleCompletionAsync(task.Id, Login.CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private async Task DeleteOverdueTask(DailyTask task)
+    {
+        await TaskService.DeleteTaskAsync(task.Id, Login.CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private async Task MoveToToday(DailyTask task)
+    {
+        await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, Login.CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private void ToggleSettings()
+    {
+        ShowSettings = !ShowSettings;
+    }
+
+    private async Task SaveSettings()
+    {
+        await AuthService.UpdateUserSettingsAsync(Login.CurrentUserId, CurrentTheme, true, false);
+    }
+
+    private void Logout()
+    {
+        Login.CurrentUserId = 0;
+        Login.CurrentUsername = string.Empty;
+        Navigation.NavigateTo("/login");
+    }
+
+    private string FormatTime(TimeSpan? time)
+    {
+        if (!time.HasValue) return "";
+        var dt = DateTime.Today.Add(time.Value);
+        return dt.ToString("h:mm tt");
+    }
+}

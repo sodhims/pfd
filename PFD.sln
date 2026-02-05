@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11426.168 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
@@ -14,6 +14,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PFD.Wpf", "src\PFD.Wpf\PFD.Wpf.csproj", "{DE74A6E1-2F1D-4996-956E-6E9EE4D400EB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PFD.Blazor", "src\PFD.Blazor\PFD.Blazor.csproj", "{6E882778-9697-458C-975A-9DE9C6A5789F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PFD.Mobile", "src\PFD.Mobile\PFD.Mobile.csproj", "{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -85,6 +87,19 @@ Global
 		{6E882778-9697-458C-975A-9DE9C6A5789F}.Release|x64.Build.0 = Release|Any CPU
 		{6E882778-9697-458C-975A-9DE9C6A5789F}.Release|x86.ActiveCfg = Release|Any CPU
 		{6E882778-9697-458C-975A-9DE9C6A5789F}.Release|x86.Build.0 = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|Any CPU.ActiveCfg = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|Any CPU.Build.0 = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|Any CPU.Deploy.0 = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|x64.Build.0 = Debug|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Debug|x86.Build.0 = Debug|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|x64.ActiveCfg = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|x64.Build.0 = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|x86.ActiveCfg = Release|Any CPU
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -95,5 +110,9 @@ Global
 		{C80FAACD-9299-4C63-8E51-494DF1A10205} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{DE74A6E1-2F1D-4996-956E-6E9EE4D400EB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{6E882778-9697-458C-975A-9DE9C6A5789F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{E6617C66-E42A-4BF5-B92E-147DA0EC15AF} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E7554323-CA3D-4D6F-99F3-2B325831A06C}
 	EndGlobalSection
 EndGlobal

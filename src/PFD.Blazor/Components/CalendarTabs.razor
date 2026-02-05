@@ -1,0 +1,131 @@
+@using PFD.Shared.Interfaces
+
+<div class="calendar-tabs">
+    <div class="tab-header">
+        <button class="tab-btn @(ActiveTab == CalendarSource.Integrated ? "active" : "")"
+                @onclick="() => SetActiveTab(CalendarSource.Integrated)">
+            <span class="tab-icon">📋</span>
+            <span>Integrated</span>
+        </button>
+        @if (IsGoogleConnected)
+        {
+            <button class="tab-btn @(ActiveTab == CalendarSource.Google ? "active" : "")"
+                    @onclick="() => SetActiveTab(CalendarSource.Google)">
+                <span class="tab-icon">🔴</span>
+                <span>Google</span>
+                @if (GoogleEventCount > 0)
+                {
+                    <span class="event-count">@GoogleEventCount</span>
+                }
+            </button>
+        }
+        @if (IsMicrosoftConnected)
+        {
+            <button class="tab-btn @(ActiveTab == CalendarSource.Microsoft ? "active" : "")"
+                    @onclick="() => SetActiveTab(CalendarSource.Microsoft)">
+                <span class="tab-icon">🔵</span>
+                <span>Teams</span>
+                @if (MicrosoftEventCount > 0)
+                {
+                    <span class="event-count">@MicrosoftEventCount</span>
+                }
+            </button>
+        }
+    </div>
+
+    <div class="tab-content">
+        @if (ActiveTab == CalendarSource.Integrated)
+        {
+            @IntegratedContent
+        }
+        else
+        {
+            <div class="external-events">
+                @if (IsLoading)
+                {
+                    <div class="loading">Loading events...</div>
+                }
+                else if (!ExternalEvents.Any())
+                {
+                    <div class="empty-state">No events for this period</div>
+                }
+                else
+                {
+                    @foreach (var evt in ExternalEvents)
+                    {
+                        <div class="external-event @(evt.IsImported ? "imported" : "")">
+                            <div class="event-info">
+                                <span class="event-title">@evt.Title</span>
+                                <span class="event-time">
+                                    @if (evt.IsAllDay)
+                                    {
+                                        <text>All day</text>
+                                    }
+                                    else
+                                    {
+                                        @evt.Start.ToString("h:mm tt")
+                                    }
+                                </span>
+                                @if (!string.IsNullOrEmpty(evt.Location))
+                                {
+                                    <span class="event-location">📍 @evt.Location</span>
+                                }
+                            </div>
+                            <div class="event-actions">
+                                @if (evt.IsImported)
+                                {
+                                    <span class="imported-badge">✓ Imported</span>
+                                }
+                                else
+                                {
+                                    <button class="import-event-btn" @onclick="() => ImportEvent(evt)">
+                                        → Import
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (ExternalEvents.Any(e => !e.IsImported))
+                    {
+                        <div class="import-all-section">
+                            <button class="import-all-btn" @onclick="ImportAllEvents">
+                                Import All (@ExternalEvents.Count(e => !e.IsImported) events)
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public CalendarSource ActiveTab { get; set; } = CalendarSource.Integrated;
+    [Parameter] public EventCallback<CalendarSource> ActiveTabChanged { get; set; }
+    [Parameter] public RenderFragment? IntegratedContent { get; set; }
+    [Parameter] public bool IsGoogleConnected { get; set; }
+    [Parameter] public bool IsMicrosoftConnected { get; set; }
+    [Parameter] public int GoogleEventCount { get; set; }
+    [Parameter] public int MicrosoftEventCount { get; set; }
+    [Parameter] public List<ExternalCalendarEvent> ExternalEvents { get; set; } = new();
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public EventCallback<ExternalCalendarEvent> OnImportEvent { get; set; }
+    [Parameter] public EventCallback OnImportAllEvents { get; set; }
+
+    private async Task SetActiveTab(CalendarSource tab)
+    {
+        ActiveTab = tab;
+        await ActiveTabChanged.InvokeAsync(tab);
+    }
+
+    private async Task ImportEvent(ExternalCalendarEvent evt)
+    {
+        await OnImportEvent.InvokeAsync(evt);
+    }
+
+    private async Task ImportAllEvents()
+    {
+        await OnImportAllEvents.InvokeAsync();
+    }
+}

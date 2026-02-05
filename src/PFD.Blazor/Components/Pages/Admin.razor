@@ -1,0 +1,434 @@
+@page "/pfd-admin-console"
+@using PFD.Shared.Interfaces
+@using PFD.Shared.Models
+@inject IAuthService AuthService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<div class="admin-container">
+    <div class="admin-header">
+        <h1>PFD Admin Console</h1>
+        <span class="admin-badge">Superuser Only</span>
+    </div>
+
+    @if (!IsAuthenticated)
+    {
+        <div class="auth-required">
+            <h2>Admin Authentication Required</h2>
+            <p>This console is restricted to administrators only.</p>
+            <div class="admin-login-form">
+                <div class="form-group">
+                    <label>Username:</label>
+                    <input type="text" @bind="AdminUsername" placeholder="Admin username" />
+                </div>
+                <div class="form-group">
+                    <label>Password:</label>
+                    <input type="password" @bind="AdminPassword" placeholder="Password" @onkeypress="HandleKeyPress" />
+                </div>
+                @if (!string.IsNullOrEmpty(LoginError))
+                {
+                    <div class="login-error">@LoginError</div>
+                }
+                <button class="login-btn" @onclick="AdminLogin">Login to Console</button>
+            </div>
+        </div>
+    }
+    else if (!IsAdmin)
+    {
+        <div class="auth-required">
+            <h2>Access Denied</h2>
+            <p>You do not have administrator privileges.</p>
+            <button class="logout-btn" @onclick="Logout">Logout</button>
+        </div>
+    }
+    else
+    {
+        <div class="admin-content">
+            <div class="admin-toolbar">
+                <button class="refresh-btn" @onclick="RefreshData">Refresh Data</button>
+                <button class="logout-btn" @onclick="Logout">Logout</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(Message))
+            {
+                <div class="message @MessageType">@Message</div>
+            }
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">@Stats.TotalUsers</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">@Stats.ActiveUsersLast7Days</div>
+                    <div class="stat-label">Active (7 days)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">@Stats.TotalTasks</div>
+                    <div class="stat-label">Total Tasks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">@Stats.CompletedTasks</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">@FormatBytes(Stats.DatabaseSizeBytes)</div>
+                    <div class="stat-label">Database Size</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">@(Stats.TotalTasks > 0 ? Math.Round((double)Stats.CompletedTasks / Stats.TotalTasks * 100) : 0)%</div>
+                    <div class="stat-label">Completion Rate</div>
+                </div>
+            </div>
+
+            <!-- Theme Analytics -->
+            <div class="admin-section">
+                <h2>Theme Usage Analytics</h2>
+                <div class="theme-grid">
+                    @foreach (var theme in Stats.ThemeUsage.OrderByDescending(t => t.Value))
+                    {
+                        <div class="theme-stat" style="--theme-color: @GetThemeColor(theme.Key)">
+                            <div class="theme-name">@theme.Key</div>
+                            <div class="theme-count">@theme.Value users</div>
+                            <div class="theme-bar">
+                                <div class="theme-bar-fill" style="width: @(Stats.TotalUsers > 0 ? (theme.Value * 100 / Stats.TotalUsers) : 0)%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Tasks Per User -->
+            <div class="admin-section">
+                <h2>Tasks Per User</h2>
+                <div class="tasks-chart">
+                    @foreach (var userTask in Stats.TasksPerUser.OrderByDescending(t => t.Value))
+                    {
+                        <div class="user-task-row">
+                            <span class="user-name">@userTask.Key</span>
+                            <div class="task-bar-container">
+                                <div class="task-bar" style="width: @(Stats.TotalTasks > 0 ? Math.Min(100, userTask.Value * 100 / Math.Max(1, Stats.TasksPerUser.Values.Max())) : 0)%"></div>
+                            </div>
+                            <span class="task-count">@userTask.Value</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- User Management -->
+            <div class="admin-section">
+                <h2>User Management</h2>
+                <p class="section-desc">Manage user accounts and reset passwords</p>
+
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Theme</th>
+                            <th>Created</th>
+                            <th>Last Login</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in Users)
+                        {
+                            <tr class="@(user.Id == 1 ? "admin-row" : "")">
+                                <td>@user.Id</td>
+                                <td>@user.Username @(user.Id == 1 ? "(Admin)" : "")</td>
+                                <td>@user.DisplayName</td>
+                                <td><span class="theme-badge" style="background: @GetThemeColor(user.Theme)">@user.Theme</span></td>
+                                <td>@user.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                <td>@user.LastLoginAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td class="actions-cell">
+                                    <button class="action-btn view" @onclick="() => ShowUserDetails(user)">View</button>
+                                    <button class="action-btn reset" @onclick="() => ShowResetDialog(user)">Reset Pwd</button>
+                                    @if (user.Id != 1)
+                                    {
+                                        <button class="action-btn delete" @onclick="() => ConfirmDelete(user)">Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Password Info -->
+            @if (SelectedUser != null)
+            {
+                <div class="admin-section">
+                    <h2>User Details: @SelectedUser.Username</h2>
+                    <div class="user-details-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">ID:</span>
+                            <span class="detail-value">@SelectedUser.Id</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Username:</span>
+                            <span class="detail-value">@SelectedUser.Username</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Display Name:</span>
+                            <span class="detail-value">@SelectedUser.DisplayName</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Theme:</span>
+                            <span class="detail-value">@SelectedUser.Theme</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Daily View:</span>
+                            <span class="detail-value">@(SelectedUser.IsDailyView ? "Yes" : "No")</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Large Text:</span>
+                            <span class="detail-value">@(SelectedUser.UseLargeText ? "Yes" : "No")</span>
+                        </div>
+                        <div class="detail-item full-width">
+                            <span class="detail-label">Password Hash (SHA256):</span>
+                            <code class="hash-display">@SelectedUser.PasswordHash</code>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (ShowResetModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Reset Password</h3>
+            <p>Reset password for <strong>@SelectedUser?.Username</strong></p>
+
+            <div class="form-group">
+                <label>New Password:</label>
+                <input type="password" @bind="NewPassword" placeholder="Enter new password" />
+            </div>
+
+            <div class="form-group">
+                <label>Confirm Password:</label>
+                <input type="password" @bind="ConfirmPassword" placeholder="Confirm new password" />
+            </div>
+
+            <div class="modal-actions">
+                <button class="cancel-btn" @onclick="CloseModal">Cancel</button>
+                <button class="confirm-btn" @onclick="ResetPassword">Reset Password</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowDeleteModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h3>Confirm Delete</h3>
+            <p>Are you sure you want to delete user <strong>@SelectedUser?.Username</strong>?</p>
+            <p class="warning">This action cannot be undone. All user data will be permanently deleted.</p>
+
+            <div class="modal-actions">
+                <button class="cancel-btn" @onclick="CloseModal">Cancel</button>
+                <button class="delete-btn" @onclick="DeleteUser">Delete User</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool IsAuthenticated { get; set; } = false;
+    private bool IsAdmin { get; set; } = false;
+    private int CurrentUserId { get; set; }
+    private List<User> Users { get; set; } = new();
+    private User? SelectedUser { get; set; }
+    private AdminStats Stats { get; set; } = new();
+
+    private string AdminUsername { get; set; } = "";
+    private string AdminPassword { get; set; } = "";
+    private string LoginError { get; set; } = "";
+
+    private bool ShowResetModal { get; set; } = false;
+    private bool ShowDeleteModal { get; set; } = false;
+    private string NewPassword { get; set; } = "";
+    private string ConfirmPassword { get; set; } = "";
+
+    private string Message { get; set; } = "";
+    private string MessageType { get; set; } = "";
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AdminLogin();
+        }
+    }
+
+    private async Task AdminLogin()
+    {
+        LoginError = "";
+        if (string.IsNullOrWhiteSpace(AdminUsername) || string.IsNullOrWhiteSpace(AdminPassword))
+        {
+            LoginError = "Please enter username and password";
+            return;
+        }
+
+        var user = await AuthService.LoginAsync(AdminUsername, AdminPassword);
+        if (user == null)
+        {
+            LoginError = "Invalid credentials";
+            return;
+        }
+
+        CurrentUserId = user.Id;
+        IsAuthenticated = true;
+        IsAdmin = await AuthService.IsAdminAsync(user.Id);
+
+        if (IsAdmin)
+        {
+            await LoadAllDataAsync();
+        }
+    }
+
+    private void Logout()
+    {
+        IsAuthenticated = false;
+        IsAdmin = false;
+        CurrentUserId = 0;
+        AdminUsername = "";
+        AdminPassword = "";
+        SelectedUser = null;
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadAllDataAsync();
+        Message = "Data refreshed";
+        MessageType = "success";
+    }
+
+    private async Task LoadAllDataAsync()
+    {
+        Users = await AuthService.GetAllUsersAsync();
+        Stats = await AuthService.GetAdminStatsAsync();
+    }
+
+    private void ShowUserDetails(User user)
+    {
+        SelectedUser = user;
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F2} MB";
+    }
+
+    private string GetThemeColor(string theme) => theme.ToLower() switch
+    {
+        "teal" => "#14b8a6",
+        "blue" => "#3b82f6",
+        "purple" => "#8b5cf6",
+        "pink" => "#ec4899",
+        "orange" => "#f97316",
+        "green" => "#22c55e",
+        "red" => "#ef4444",
+        "nordic" => "#5e81ac",
+        "vampire" => "#722f37",
+        "bigly" => "#ffd700",
+        "tropical" => "#ff6b6b",
+        "pinkish" => "#ff69b4",
+        "ughly" => "#8b4513",
+        "greek" => "#1e90ff",
+        _ => "#667eea"
+    };
+
+    private void ShowResetDialog(User user)
+    {
+        SelectedUser = user;
+        NewPassword = "";
+        ConfirmPassword = "";
+        ShowResetModal = true;
+    }
+
+    private void ConfirmDelete(User user)
+    {
+        SelectedUser = user;
+        ShowDeleteModal = true;
+    }
+
+    private void CloseModal()
+    {
+        ShowResetModal = false;
+        ShowDeleteModal = false;
+        NewPassword = "";
+        ConfirmPassword = "";
+    }
+
+    private async Task ResetPassword()
+    {
+        if (SelectedUser == null) return;
+
+        if (string.IsNullOrWhiteSpace(NewPassword))
+        {
+            Message = "Password cannot be empty";
+            MessageType = "error";
+            return;
+        }
+
+        if (NewPassword != ConfirmPassword)
+        {
+            Message = "Passwords do not match";
+            MessageType = "error";
+            return;
+        }
+
+        if (NewPassword.Length < 4)
+        {
+            Message = "Password must be at least 4 characters";
+            MessageType = "error";
+            return;
+        }
+
+        var success = await AuthService.ResetPasswordAsync(SelectedUser.Id, NewPassword);
+        if (success)
+        {
+            Message = $"Password reset successfully for {SelectedUser.Username}";
+            MessageType = "success";
+            await LoadAllDataAsync();
+        }
+        else
+        {
+            Message = "Failed to reset password";
+            MessageType = "error";
+        }
+
+        CloseModal();
+    }
+
+    private async Task DeleteUser()
+    {
+        if (SelectedUser == null || SelectedUser.Id == 1) return;
+
+        var success = await AuthService.DeleteUserAsync(SelectedUser.Id);
+        if (success)
+        {
+            Message = $"User {SelectedUser.Username} deleted successfully";
+            MessageType = "success";
+            await LoadAllDataAsync();
+        }
+        else
+        {
+            Message = "Failed to delete user";
+            MessageType = "error";
+        }
+
+        CloseModal();
+    }
+
+}

@@ -30,6 +30,9 @@
             <converters:HasScheduledTimeConverter x:Key="HasScheduledTimeConverter"/>
             <converters:DurationToStringConverter x:Key="DurationToStringConverter"/>
             <converters:InverseBoolConverter x:Key="InverseBoolConverter"/>
+            <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
+            <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+            <converters:ImportButtonTextConverter x:Key="ImportButtonTextConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

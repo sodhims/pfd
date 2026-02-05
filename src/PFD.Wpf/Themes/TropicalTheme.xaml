@@ -1,0 +1,123 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Frame Colors (Coral outer) -->
+    <SolidColorBrush x:Key="FrameBg" Color="#FF6B6B"/>
+    <SolidColorBrush x:Key="FrameBorder" Color="#E85555"/>
+
+    <!-- Calendar Section (Teal/Mint) -->
+    <SolidColorBrush x:Key="CalendarBg" Color="#4ECDC4"/>
+    <SolidColorBrush x:Key="CalendarHeaderBg" Color="#45B7AA"/>
+    <SolidColorBrush x:Key="CalendarDayBg" Color="#A8E6CF"/>
+    <SolidColorBrush x:Key="CalendarSelectedDay" Color="#FFE66D"/>
+    <SolidColorBrush x:Key="CalendarTodayBg" Color="#98E4D0"/>
+
+    <!-- Task Section (Yellow/Sunny) -->
+    <SolidColorBrush x:Key="TaskListBg" Color="#FFE66D"/>
+    <SolidColorBrush x:Key="TaskHeaderBg" Color="#FF6B6B"/>
+    <SolidColorBrush x:Key="TaskRowBg" Color="#FFF8DC"/>
+    <SolidColorBrush x:Key="TaskRowHoverBg" Color="#FFFACD"/>
+    <SolidColorBrush x:Key="TaskRowCompletedBg" Color="#A8E6CF"/>
+    <SolidColorBrush x:Key="TaskRowCompletedText" Color="#2C3E50"/>
+
+    <!-- Text Colors -->
+    <SolidColorBrush x:Key="TextPrimary" Color="#2C3E50"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#5D6D7E"/>
+    <SolidColorBrush x:Key="TextLight" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextHeader" Color="#E85555"/>
+
+    <!-- Checkbox Styling -->
+    <SolidColorBrush x:Key="CheckboxBorder" Color="#4ECDC4"/>
+    <SolidColorBrush x:Key="CheckboxChecked" Color="#45B7AA"/>
+    <SolidColorBrush x:Key="CheckboxUnchecked" Color="#FFFFFF"/>
+
+    <!-- Button Styling -->
+    <SolidColorBrush x:Key="ButtonBg" Color="#FF6B6B"/>
+    <SolidColorBrush x:Key="ButtonHoverBg" Color="#FF8E8E"/>
+    <SolidColorBrush x:Key="ButtonText" Color="#FFFFFF"/>
+
+    <!-- Input Styling -->
+    <SolidColorBrush x:Key="InputBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputBorder" Color="#4ECDC4"/>
+
+    <!-- Common Styles -->
+    <Style x:Key="HeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextHeader}"/>
+    </Style>
+
+    <Style x:Key="TaskTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Checkbox Style -->
+    <Style x:Key="TaskCheckboxStyle" TargetType="CheckBox">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="5,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Border x:Name="border"
+                                Width="24" Height="24"
+                                BorderThickness="2"
+                                BorderBrush="{DynamicResource CheckboxBorder}"
+                                Background="{DynamicResource CheckboxUnchecked}"
+                                CornerRadius="4">
+                            <Path x:Name="checkMark"
+                                  Data="M 2,6 L 6,10 L 12,2"
+                                  Stroke="{DynamicResource CheckboxChecked}"
+                                  StrokeThickness="3"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="checkMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource TaskRowCompletedBg}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource CheckboxChecked}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Calendar Day Button Style -->
+    <Style x:Key="CalendarDayButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="40"/>
+        <Setter Property="Height" Value="40"/>
+        <Setter Property="Margin" Value="2"/>
+        <Setter Property="Background" Value="{DynamicResource CalendarDayBg}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource CalendarHeaderBg}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource CalendarSelectedDay}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,202 @@
+@page "/auth/google/callback"
+@using PFD.Shared.Interfaces
+@using PFD.Services
+@inject ICalendarCredentialsService CredentialsService
+@inject ITaskService TaskService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<div class="callback-container">
+    <div class="callback-box">
+        @if (IsProcessing)
+        {
+            <div class="processing">
+                <span class="spinner">&#8987;</span>
+                <p>Connecting to Google Calendar...</p>
+            </div>
+        }
+        else if (Success)
+        {
+            <div class="success">
+                <span class="icon">&#10004;</span>
+                <h2>Connected!</h2>
+                <p>Your Google Calendar is now connected.</p>
+                <p>Redirecting to planner...</p>
+            </div>
+        }
+        else
+        {
+            <div class="error">
+                <span class="icon">&#10006;</span>
+                <h2>Connection Failed</h2>
+                <p>@ErrorMessage</p>
+                <button @onclick="GoToPlanner">Return to Planner</button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .callback-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .callback-box {
+        background: white;
+        border-radius: 16px;
+        padding: 48px;
+        text-align: center;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        max-width: 400px;
+    }
+
+    .processing, .success, .error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .spinner {
+        font-size: 48px;
+        animation: spin 1s linear infinite;
+    }
+
+    @@keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .icon {
+        font-size: 64px;
+    }
+
+    .success .icon {
+        color: #34A853;
+    }
+
+    .error .icon {
+        color: #EA4335;
+    }
+
+    h2 {
+        margin: 0;
+        color: #333;
+    }
+
+    p {
+        margin: 0;
+        color: #666;
+    }
+
+    button {
+        margin-top: 16px;
+        padding: 12px 24px;
+        background: #4285F4;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #3367D6;
+    }
+</style>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Code { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? State { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    private bool IsProcessing { get; set; } = true;
+    private bool Success { get; set; } = false;
+    private string ErrorMessage { get; set; } = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        if (!string.IsNullOrEmpty(Error))
+        {
+            ErrorMessage = $"Google denied access: {Error}";
+            IsProcessing = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(Code))
+        {
+            ErrorMessage = "No authorization code received.";
+            IsProcessing = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Get user ID from localStorage
+        var userIdStr = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "pfd_user_id");
+        if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out var userId))
+        {
+            ErrorMessage = "Please log in first.";
+            IsProcessing = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Load Google credentials from database and create service
+        var googleCreds = await CredentialsService.GetCredentialsAsync(userId, "Google");
+        if (googleCreds == null || string.IsNullOrEmpty(googleCreds.ClientId) || string.IsNullOrEmpty(googleCreds.ClientSecret))
+        {
+            ErrorMessage = "Google Calendar credentials not configured. Please set them up in Settings.";
+            IsProcessing = false;
+            StateHasChanged();
+            return;
+        }
+
+        var googleService = new GoogleCalendarService(
+            TaskService,
+            googleCreds.ClientId,
+            googleCreds.ClientSecret,
+            googleCreds.RedirectUri ?? "https://localhost:5001/auth/google/callback"
+        );
+
+        var success = await googleService.HandleAuthCallbackAsync(Code, userId);
+
+        IsProcessing = false;
+        Success = success;
+
+        if (success)
+        {
+            // Mark as connected in database
+            await CredentialsService.SetConnectedAsync(userId, "Google", true);
+        }
+        else
+        {
+            ErrorMessage = "Failed to complete Google authorization.";
+        }
+
+        StateHasChanged();
+
+        if (success)
+        {
+            await Task.Delay(2000);
+            Navigation.NavigateTo("/planner", forceLoad: true);
+        }
+    }
+
+    private void GoToPlanner()
+    {
+        Navigation.NavigateTo("/planner");
+    }
+}

@@ -10,6 +10,14 @@ public class DailyTask
     [Key]
     public int Id { get; set; }
 
+    /// <summary>
+    /// The user who owns this task
+    /// </summary>
+    public int UserId { get; set; }
+
+    [ForeignKey("UserId")]
+    public virtual User? User { get; set; }
+
     [Required]
     [MaxLength(500)]
     public string Title { get; set; } = string.Empty;
@@ -60,6 +68,30 @@ public class DailyTask
     /// Display order for the day
     /// </summary>
     public int SortOrder { get; set; }
+
+    /// <summary>
+    /// Parent task ID for subtasks (null if this is a top-level task)
+    /// </summary>
+    public int? ParentTaskId { get; set; }
+
+    /// <summary>
+    /// Navigation property to parent task
+    /// </summary>
+    [ForeignKey("ParentTaskId")]
+    public virtual DailyTask? ParentTask { get; set; }
+
+    /// <summary>
+    /// Navigation property for subtasks
+    /// </summary>
+    public virtual ICollection<DailyTask> Subtasks { get; set; } = new List<DailyTask>();
+
+    /// <summary>
+    /// If non-null, this task is shared to the specified group
+    /// </summary>
+    public int? GroupId { get; set; }
+
+    [ForeignKey("GroupId")]
+    public virtual TaskGroup? Group { get; set; }
 
     /// <summary>
     /// Custom color for theming (hex code)

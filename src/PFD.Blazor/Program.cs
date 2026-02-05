@@ -18,9 +18,16 @@ builder.Services.AddControllers();
 var azureSqlConnection = builder.Configuration.GetConnectionString("AzureSql");
 if (!string.IsNullOrEmpty(azureSqlConnection))
 {
-    // Azure SQL Database
+    // Azure SQL Database with connection resiliency for auto-pause
     builder.Services.AddDbContext<PfdDbContext>(options =>
-        options.UseSqlServer(azureSqlConnection));
+        options.UseSqlServer(azureSqlConnection, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null);
+            sqlOptions.CommandTimeout(60);
+        }));
     Console.WriteLine("Using Azure SQL Database");
 }
 else
@@ -34,11 +41,23 @@ else
 
 // Repositories and Services
 builder.Services.AddScoped<TaskRepository>();
+builder.Services.AddScoped<GroupRepository>();
 builder.Services.AddScoped<ITaskService, TaskService>();
+builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddScoped<IOllamaService, OllamaService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICalendarCredentialsService, CalendarCredentialsService>();
+
+// Claude AI Service - set Claude:ApiKey in appsettings.json or CLAUDE_API_KEY env var
+var claudeApiKey = builder.Configuration["Claude:ApiKey"] ?? Environment.GetEnvironmentVariable("CLAUDE_API_KEY") ?? "";
+var claudeModel = builder.Configuration["Claude:Model"] ?? "claude-sonnet-4-20250514";
+builder.Services.AddScoped<IClaudeService>(sp =>
+    new ClaudeService(new HttpClient(), claudeApiKey, claudeModel));
+if (!string.IsNullOrEmpty(claudeApiKey))
+    Console.WriteLine("Claude AI Service configured");
+else
+    Console.WriteLine("Claude AI not configured (set Claude:ApiKey or CLAUDE_API_KEY)");
 
 // External Calendar Services - configure with your credentials
 var googleClientId = builder.Configuration["Google:ClientId"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
