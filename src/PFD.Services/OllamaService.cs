@@ -117,4 +117,108 @@ Always respond with valid JSON containing these fields:
         public string? Role { get; set; }
         public string? Content { get; set; }
     }
+
+    public async Task<TaskAction?> ParseTaskActionAsync(string taskText)
+    {
+        try
+        {
+            var systemPrompt = @"You are a task action parser. Analyze the task text and determine if it contains an actionable intent.
+
+Look for these action types:
+- EMAIL: mentions ""email"", ""send"", ""write to"", ""contact"", ""message"", ""reply""
+- CALL: mentions ""call"", ""phone"", ""ring"", ""dial"", ""speak with""
+- DOCUMENT: mentions ""write"", ""draft"", ""review"", ""read"", ""document"", ""report"", ""paper""
+- WEBSITE: mentions ""check"", ""visit"", ""browse"", ""look up"", ""search""
+- MEETING: mentions ""meet"", ""schedule"", ""book"", ""appointment""
+
+Extract any person names, email addresses, phone numbers, or subjects mentioned.
+
+Respond with ONLY valid JSON:
+{
+  ""actionType"": ""email|call|document|website|meeting|none"",
+  ""target"": ""email/phone/name if found, or null"",
+  ""subject"": ""topic or purpose if found, or null"",
+  ""body"": ""suggested draft content if email, or null"",
+  ""searchQuery"": ""what to search for contact info, or null"",
+  ""confidence"": 0.0 to 1.0
+}";
+
+            var request = new
+            {
+                model = _model,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = $"Parse this task: \"{taskText}\"" }
+                },
+                stream = false,
+                format = "json"
+            };
+
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/chat", request);
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var result = await response.Content.ReadFromJsonAsync<OllamaChatResponse>();
+            var content = result?.Message?.Content;
+
+            if (string.IsNullOrEmpty(content))
+                return null;
+
+            var parsed = JsonSerializer.Deserialize<TaskActionResponse>(content, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (parsed == null)
+                return null;
+
+            return new TaskAction
+            {
+                ActionType = ParseActionType(parsed.ActionType),
+                Target = parsed.Target,
+                Subject = parsed.Subject,
+                Body = parsed.Body,
+                SearchQuery = parsed.SearchQuery,
+                Confidence = parsed.Confidence
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static TaskActionType ParseActionType(string? actionType)
+    {
+        return actionType?.ToLowerInvariant() switch
+        {
+            "email" => TaskActionType.Email,
+            "call" => TaskActionType.Call,
+            "document" => TaskActionType.Document,
+            "website" => TaskActionType.Website,
+            "meeting" => TaskActionType.Meeting,
+            _ => TaskActionType.None
+        };
+    }
+
+    private class TaskActionResponse
+    {
+        public string? ActionType { get; set; }
+        public string? Target { get; set; }
+        public string? Subject { get; set; }
+        public string? Body { get; set; }
+        public string? SearchQuery { get; set; }
+        public double Confidence { get; set; }
+    }
+
+    public async Task<CalendarAnalysis> AnalyzeCalendarPatternsAsync(List<DailyTask> tasks, int daysToAnalyze = 30)
+    {
+        // Basic implementation - returns empty analysis for now
+        var result = new CalendarAnalysis();
+        result.Summary = "Calendar analysis via Mistral - feature in development.";
+        result.GeneratedAt = DateTime.UtcNow;
+        return await Task.FromResult(result);
+    }
 }

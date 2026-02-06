@@ -20,6 +20,11 @@ public interface IClaudeService
     Task<TaskInsights> GetInsightsAsync(List<DailyTask> recentTasks);
 
     /// <summary>
+    /// Deep calendar pattern analysis - examines priorities, workload, routines, and coordination
+    /// </summary>
+    Task<CalendarAnalysis> AnalyzeCalendarPatternsAsync(List<DailyTask> tasks, int daysToAnalyze = 30);
+
+    /// <summary>
     /// Generic prompt - send any prompt and get a text response
     /// </summary>
     Task<string?> SendPromptAsync(string systemPrompt, string userPrompt);

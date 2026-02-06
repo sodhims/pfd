@@ -10,12 +10,17 @@ public class AnalysisService : IAnalysisService
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
     private readonly string _model;
+    private readonly IInsightHistoryService? _historyService;
+    private readonly IPromptTemplateService? _templateService;
 
-    public AnalysisService(HttpClient? httpClient = null, string baseUrl = "http://localhost:11434", string model = "mistral")
+    public AnalysisService(HttpClient? httpClient = null, string baseUrl = "http://localhost:11434", string model = "mistral",
+        IInsightHistoryService? historyService = null, IPromptTemplateService? templateService = null)
     {
         _httpClient = httpClient ?? new HttpClient();
         _baseUrl = baseUrl;
         _model = model;
+        _historyService = historyService;
+        _templateService = templateService;
     }
 
     public async Task<bool> IsAvailableAsync()
@@ -181,6 +186,11 @@ Suggest the best date for this task.";
 
     public async Task<TaskInsights> GetInsightsAsync(List<DailyTask> recentTasks)
     {
+        return await GetInsightsAsync(recentTasks, 0); // Default userId = 0 for backward compatibility
+    }
+
+    public async Task<TaskInsights> GetInsightsAsync(List<DailyTask> recentTasks, int userId)
+    {
         var result = new TaskInsights();
 
         if (!recentTasks.Any())
@@ -211,6 +221,23 @@ Suggest the best date for this task.";
             .GroupBy(t => t.TaskType.ToString())
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // Build current snapshot for raw data comparison
+        TaskDataSnapshot? currentSnapshot = null;
+        TaskDataSnapshot? previousSnapshot = null;
+        string? historicalContext = null;
+
+        if (_historyService != null && userId > 0)
+        {
+            var periodStart = recentTasks.Min(t => t.TaskDate);
+            var periodEnd = recentTasks.Max(t => t.TaskDate);
+
+            currentSnapshot = await _historyService.GenerateSnapshotAsync(userId, periodStart, periodEnd);
+            previousSnapshot = await _historyService.GetPreviousSnapshotAsync(userId, "weekly");
+
+            // Build comparison from RAW DATA (not previous AI analysis)
+            historicalContext = _historyService.BuildComparisonContext(currentSnapshot, previousSnapshot);
+        }
+
         try
         {
             var taskSummary = new
@@ -224,17 +251,42 @@ Suggest the best date for this task.";
                 overdueTasks = recentTasks.Count(t => !t.IsCompleted && t.TaskDate.Date < DateTime.Today)
             };
 
+            // Get system prompt from template service or use default
             var systemPrompt = @"You are a productivity insights assistant. Analyze task patterns and provide suggestions.
+
+Focus ONLY on the raw task data provided. Do not reference any previous analyses or AI outputs.
+
+Consider:
+- Completion rates and trends
+- Task distribution across categories
+- Overdue patterns
+- Daily/weekly rhythms
 
 Respond with valid JSON:
 {
-  ""summary"": ""2-3 sentence productivity summary"",
-  ""suggestions"": [""suggestion 1"", ""suggestion 2"", ...]
+  ""summary"": ""2-3 sentence productivity summary based on the data"",
+  ""suggestions"": [""actionable suggestion 1"", ""actionable suggestion 2""]
 }
 
-Be encouraging but honest. Focus on actionable improvements.";
+Be encouraging but honest. Focus on actionable improvements based on the actual numbers.";
 
+            if (_templateService != null)
+            {
+                var template = await _templateService.GetActiveTemplateAsync(PromptCategory.Insights);
+                if (template != null && !string.IsNullOrEmpty(template.SystemPrompt))
+                {
+                    systemPrompt = template.SystemPrompt;
+                }
+            }
+
+            // Build user prompt with RAW DATA context (not previous AI analysis)
             var userPrompt = $"Analyze these task statistics from the past 30 days:\n{JsonSerializer.Serialize(taskSummary)}";
+
+            // Add historical RAW DATA comparison (never AI-on-AI)
+            if (!string.IsNullOrEmpty(historicalContext))
+            {
+                userPrompt += $"\n\n{historicalContext}";
+            }
 
             var response = await CallOllamaAsync(systemPrompt, userPrompt);
 
@@ -246,6 +298,25 @@ Be encouraging but honest. Focus on actionable improvements.";
                 {
                     result.ProductivitySummary = parsed.Summary ?? $"Completion rate: {result.CompletionRate:F0}%";
                     result.Suggestions = parsed.Suggestions ?? new List<string>();
+
+                    // Save this insight with its raw data snapshot
+                    if (_historyService != null && userId > 0 && currentSnapshot != null)
+                    {
+                        var periodStart = recentTasks.Min(t => t.TaskDate);
+                        var periodEnd = recentTasks.Max(t => t.TaskDate);
+
+                        await _historyService.SaveInsightAsync(
+                            userId,
+                            "weekly",
+                            periodStart,
+                            periodEnd,
+                            currentSnapshot,
+                            result.ProductivitySummary,
+                            JsonSerializer.Serialize(result.Suggestions),
+                            null,
+                            _model
+                        );
+                    }
                 }
             }
         }

@@ -45,9 +45,20 @@ builder.Services.AddTransient<GroupRepository>();
 builder.Services.AddTransient<ITaskService, TaskService>();
 builder.Services.AddTransient<IGroupService, GroupService>();
 builder.Services.AddScoped<IOllamaService, OllamaService>();
-builder.Services.AddScoped<IAnalysisService, AnalysisService>();
 builder.Services.AddTransient<IAuthService, AuthService>();
 builder.Services.AddTransient<ICalendarCredentialsService, CalendarCredentialsService>();
+
+// Prompt Templates and Insight History Services
+builder.Services.AddTransient<IPromptTemplateService, PromptTemplateService>();
+builder.Services.AddTransient<IInsightHistoryService, InsightHistoryService>();
+
+// Analysis Service with history and templates
+builder.Services.AddScoped<IAnalysisService>(sp =>
+{
+    var historyService = sp.GetService<IInsightHistoryService>();
+    var templateService = sp.GetService<IPromptTemplateService>();
+    return new AnalysisService(new HttpClient(), "http://localhost:11434", "mistral", historyService, templateService);
+});
 
 // Claude AI Service - set Claude:ApiKey in appsettings.json or CLAUDE_API_KEY env var
 var claudeApiKey = builder.Configuration["Claude:ApiKey"] ?? Environment.GetEnvironmentVariable("CLAUDE_API_KEY") ?? "";
@@ -106,6 +117,49 @@ builder.Services.AddScoped<ICalendarSyncService>(sp =>
     }
 
     return syncService;
+});
+
+// Notification Services
+var smtpHost = builder.Configuration["Smtp:Host"] ?? "";
+var smtpPort = int.TryParse(builder.Configuration["Smtp:Port"], out var port) ? port : 587;
+var smtpEmail = builder.Configuration["Smtp:Email"] ?? "";
+var smtpPassword = builder.Configuration["Smtp:Password"] ?? "";
+
+var sendGridKey = builder.Configuration["SendGrid:ApiKey"] ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY") ?? "";
+var sendGridEmail = builder.Configuration["SendGrid:SenderEmail"] ?? smtpEmail;
+
+var twilioSid = builder.Configuration["Twilio:AccountSid"] ?? Environment.GetEnvironmentVariable("TWILIO_ACCOUNT_SID") ?? "";
+var twilioToken = builder.Configuration["Twilio:AuthToken"] ?? Environment.GetEnvironmentVariable("TWILIO_AUTH_TOKEN") ?? "";
+var twilioPhone = builder.Configuration["Twilio:FromNumber"] ?? Environment.GetEnvironmentVariable("TWILIO_FROM_NUMBER") ?? "";
+
+// Register email service (prefer SendGrid if configured, fallback to SMTP)
+if (!string.IsNullOrEmpty(sendGridKey))
+{
+    builder.Services.AddScoped<IEmailNotificationService>(sp =>
+        new SendGridNotificationService(new HttpClient(), sendGridKey, sendGridEmail));
+    Console.WriteLine("SendGrid email notifications configured");
+}
+else if (!string.IsNullOrEmpty(smtpHost) && !string.IsNullOrEmpty(smtpEmail))
+{
+    builder.Services.AddScoped<IEmailNotificationService>(sp =>
+        new EmailNotificationService(smtpHost, smtpPort, smtpEmail, smtpPassword));
+    Console.WriteLine("SMTP email notifications configured");
+}
+
+// Register SMS service
+if (!string.IsNullOrEmpty(twilioSid) && !string.IsNullOrEmpty(twilioToken))
+{
+    builder.Services.AddScoped<ISmsNotificationService>(sp =>
+        new TwilioSmsService(new HttpClient(), twilioSid, twilioToken, twilioPhone));
+    Console.WriteLine("Twilio SMS notifications configured");
+}
+
+// Register unified notification service
+builder.Services.AddScoped<INotificationService>(sp =>
+{
+    var emailService = sp.GetService<IEmailNotificationService>();
+    var smsService = sp.GetService<ISmsNotificationService>();
+    return new NotificationService(emailService, smsService);
 });
 
 var app = builder.Build();

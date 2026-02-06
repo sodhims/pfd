@@ -261,6 +261,91 @@ public class ApiService : ITaskService, IAuthService
         return await GetTasksForDateRangeAsync(DateTime.Today, DateTime.Today.AddDays(days), userId);
     }
 
+    // ==================== PARTICIPANTS ====================
+
+    public async Task<List<Participant>> GetAllParticipantsAsync()
+    {
+        try
+        {
+            var participants = await _http.GetFromJsonAsync<List<Participant>>($"{_baseUrl}/api/participants", JsonOptions);
+            return participants ?? new List<Participant>();
+        }
+        catch
+        {
+            return new List<Participant>();
+        }
+    }
+
+    public async Task<List<Participant>> GetRecentParticipantsAsync(int userId)
+    {
+        try
+        {
+            var participants = await _http.GetFromJsonAsync<List<Participant>>($"{_baseUrl}/api/participants/recent/{userId}", JsonOptions);
+            return participants ?? new List<Participant>();
+        }
+        catch
+        {
+            return new List<Participant>();
+        }
+    }
+
+    public async Task<Participant> CreateParticipantAsync(string name, string? email = null, string? phone = null)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync($"{_baseUrl}/api/participants", new { name, email, phone });
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<Participant>(JsonOptions);
+                if (result != null) return result;
+            }
+        }
+        catch { }
+        return new Participant { Name = name, Email = email, Phone = phone };
+    }
+
+    public async Task AddParticipantToTaskAsync(int taskId, int participantId, int userId)
+    {
+        try
+        {
+            await _http.PostAsync($"{_baseUrl}/api/tasks/{taskId}/participants/{participantId}?userId={userId}", null);
+        }
+        catch { }
+    }
+
+    public async Task RemoveParticipantFromTaskAsync(int taskId, int participantId, int userId)
+    {
+        try
+        {
+            await _http.DeleteAsync($"{_baseUrl}/api/tasks/{taskId}/participants/{participantId}?userId={userId}");
+        }
+        catch { }
+    }
+
+    public async Task<List<Participant>> GetTaskParticipantsAsync(int taskId)
+    {
+        try
+        {
+            var participants = await _http.GetFromJsonAsync<List<Participant>>($"{_baseUrl}/api/tasks/{taskId}/participants", JsonOptions);
+            return participants ?? new List<Participant>();
+        }
+        catch
+        {
+            return new List<Participant>();
+        }
+    }
+
+    // ==================== USER PROFILE ====================
+
+    public async Task UpdateUserProfileAsync(int userId, string? email, string? phone, string? address, string? displayName)
+    {
+        try
+        {
+            await _http.PutAsJsonAsync($"{_baseUrl}/api/auth/profile/{userId}", new { email, phone, address, displayName });
+        }
+        catch { }
+    }
+
     // ==================== HELPERS ====================
 
     private static User MapUser(UserResponse r) => new()

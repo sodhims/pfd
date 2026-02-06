@@ -13,6 +13,8 @@ public class PfdDbContext : DbContext
     public DbSet<CalendarCredentials> CalendarCredentials { get; set; } = null!;
     public DbSet<TaskGroup> TaskGroups { get; set; } = null!;
     public DbSet<GroupMember> GroupMembers { get; set; } = null!;
+    public DbSet<InsightHistory> InsightHistory { get; set; } = null!;
+    public DbSet<PromptTemplate> PromptTemplates { get; set; } = null!;
 
     private bool IsSqlServer => Database.ProviderName?.Contains("SqlServer") == true;
 
@@ -121,6 +123,133 @@ public class PfdDbContext : DbContext
             catch (Exception ex)
             {
                 Console.WriteLine($"Warning: Could not create group_members table: {ex.Message}");
+            }
+
+            // Add NotificationPreference column to participants table
+            try
+            {
+                using var addNotifPrefCmd = connection.CreateCommand();
+                addNotifPrefCmd.CommandText = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = 'participants' AND COLUMN_NAME = 'NotificationPreference'
+                    )
+                    BEGIN
+                        ALTER TABLE participants ADD NotificationPreference INT NOT NULL DEFAULT 1;
+                    END";
+                addNotifPrefCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not add NotificationPreference column: {ex.Message}");
+            }
+
+            // Add personal info columns to users table
+            var userColumns = new Dictionary<string, string>
+            {
+                { "Email", "NVARCHAR(200) NULL" },
+                { "Phone", "NVARCHAR(50) NULL" },
+                { "Address", "NVARCHAR(500) NULL" }
+            };
+
+            foreach (var column in userColumns)
+            {
+                try
+                {
+                    using var addUserColCmd = connection.CreateCommand();
+                    addUserColCmd.CommandText = $@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'users' AND COLUMN_NAME = '{column.Key}'
+                        )
+                        BEGIN
+                            ALTER TABLE users ADD {column.Key} {column.Value};
+                        END";
+                    addUserColCmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not add {column.Key} column to users: {ex.Message}");
+                }
+            }
+
+            // Create insight_history table if it doesn't exist
+            try
+            {
+                using var createInsightCmd = connection.CreateCommand();
+                createInsightCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'insight_history')
+                    BEGIN
+                        CREATE TABLE insight_history (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            UserId INT NOT NULL,
+                            InsightType NVARCHAR(50) NOT NULL,
+                            PeriodStart DATETIME2 NOT NULL,
+                            PeriodEnd DATETIME2 NOT NULL,
+                            RawDataSnapshot NVARCHAR(MAX) NOT NULL,
+                            AiInsightText NVARCHAR(MAX) NULL,
+                            AiSuggestions NVARCHAR(MAX) NULL,
+                            PromptTemplateId INT NULL,
+                            AiModel NVARCHAR(50) NULL,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_insight_history_users FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_insight_history_user_type ON insight_history(UserId, InsightType);
+                        CREATE INDEX IX_insight_history_created ON insight_history(CreatedAt);
+                    END";
+                createInsightCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create insight_history table: {ex.Message}");
+            }
+
+            // Create prompt_templates table if it doesn't exist
+            try
+            {
+                using var createTemplateCmd = connection.CreateCommand();
+                createTemplateCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'prompt_templates')
+                    BEGIN
+                        CREATE TABLE prompt_templates (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Name NVARCHAR(100) NOT NULL,
+                            Category INT NOT NULL,
+                            Description NVARCHAR(500) NULL,
+                            SystemPrompt NVARCHAR(MAX) NOT NULL,
+                            IsBuiltIn BIT NOT NULL DEFAULT 0,
+                            UserId INT NULL,
+                            IsActive BIT NOT NULL DEFAULT 0,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                        );
+                        CREATE INDEX IX_prompt_templates_category ON prompt_templates(Category);
+                        CREATE INDEX IX_prompt_templates_active ON prompt_templates(IsActive);
+                    END";
+                createTemplateCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create prompt_templates table: {ex.Message}");
+            }
+
+            // Add UserId column to prompt_templates if missing
+            try
+            {
+                using var addUserIdCmd = connection.CreateCommand();
+                addUserIdCmd.CommandText = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = 'prompt_templates' AND COLUMN_NAME = 'UserId'
+                    )
+                    BEGIN
+                        ALTER TABLE prompt_templates ADD UserId INT NULL;
+                    END";
+                addUserIdCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not add UserId column to prompt_templates: {ex.Message}");
             }
         }
         finally
@@ -262,6 +391,95 @@ public class PfdDbContext : DbContext
                         UNIQUE(GroupId, UserId)
                     )";
                 createMembersCmd.ExecuteNonQuery();
+            }
+
+            // Add NotificationPreference column to participants table
+            try
+            {
+                using var checkNotifCmd = connection.CreateCommand();
+                checkNotifCmd.CommandText = "SELECT NotificationPreference FROM participants LIMIT 1";
+                checkNotifCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var addNotifCmd = connection.CreateCommand();
+                addNotifCmd.CommandText = "ALTER TABLE participants ADD COLUMN NotificationPreference INTEGER NOT NULL DEFAULT 1";
+                addNotifCmd.ExecuteNonQuery();
+            }
+
+            // Add personal info columns to users table
+            var userColumns = new[] { "Email", "Phone", "Address" };
+            foreach (var column in userColumns)
+            {
+                try
+                {
+                    using var checkUserColCmd = connection.CreateCommand();
+                    checkUserColCmd.CommandText = $"SELECT {column} FROM users LIMIT 1";
+                    checkUserColCmd.ExecuteScalar();
+                }
+                catch
+                {
+                    using var addUserColCmd = connection.CreateCommand();
+                    addUserColCmd.CommandText = $"ALTER TABLE users ADD COLUMN {column} TEXT NULL";
+                    addUserColCmd.ExecuteNonQuery();
+                }
+            }
+
+            // Create insight_history table if it doesn't exist
+            try
+            {
+                using var checkInsightCmd = connection.CreateCommand();
+                checkInsightCmd.CommandText = "SELECT Id FROM insight_history LIMIT 1";
+                checkInsightCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createInsightCmd = connection.CreateCommand();
+                createInsightCmd.CommandText = @"
+                    CREATE TABLE insight_history (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        InsightType TEXT NOT NULL,
+                        PeriodStart TEXT NOT NULL,
+                        PeriodEnd TEXT NOT NULL,
+                        RawDataSnapshot TEXT NOT NULL,
+                        AiInsightText TEXT NULL,
+                        AiSuggestions TEXT NULL,
+                        PromptTemplateId INTEGER NULL,
+                        AiModel TEXT NULL,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE
+                    )";
+                createInsightCmd.ExecuteNonQuery();
+
+                using var createIndexCmd = connection.CreateCommand();
+                createIndexCmd.CommandText = "CREATE INDEX IX_insight_history_user_type ON insight_history(UserId, InsightType)";
+                createIndexCmd.ExecuteNonQuery();
+            }
+
+            // Create prompt_templates table if it doesn't exist
+            try
+            {
+                using var checkTemplateCmd = connection.CreateCommand();
+                checkTemplateCmd.CommandText = "SELECT Id FROM prompt_templates LIMIT 1";
+                checkTemplateCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createTemplateCmd = connection.CreateCommand();
+                createTemplateCmd.CommandText = @"
+                    CREATE TABLE prompt_templates (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Name TEXT NOT NULL,
+                        Category INTEGER NOT NULL,
+                        Description TEXT NULL,
+                        SystemPrompt TEXT NOT NULL,
+                        IsBuiltIn INTEGER NOT NULL DEFAULT 0,
+                        IsActive INTEGER NOT NULL DEFAULT 0,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        UpdatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+                    )";
+                createTemplateCmd.ExecuteNonQuery();
             }
         }
         finally
@@ -406,6 +624,34 @@ public class PfdDbContext : DbContext
         modelBuilder.Entity<CalendarCredentials>(entity =>
         {
             entity.HasIndex(e => new { e.UserId, e.Provider }).IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+        });
+
+        // InsightHistory configuration
+        modelBuilder.Entity<InsightHistory>(entity =>
+        {
+            entity.HasIndex(e => new { e.UserId, e.InsightType });
+            entity.HasIndex(e => e.CreatedAt);
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.HasOne(h => h.User)
+                .WithMany()
+                .HasForeignKey(h => h.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PromptTemplate configuration
+        modelBuilder.Entity<PromptTemplate>(entity =>
+        {
+            entity.HasIndex(e => e.Category);
+            entity.HasIndex(e => e.IsActive);
 
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql(defaultDateSql);

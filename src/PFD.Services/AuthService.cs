@@ -76,6 +76,20 @@ public class AuthService : IAuthService
         }
     }
 
+    public async Task UpdateUserProfileAsync(int userId, string? email, string? phone, string? address, string? displayName)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user != null)
+        {
+            user.Email = email;
+            user.Phone = phone;
+            user.Address = address;
+            if (!string.IsNullOrWhiteSpace(displayName))
+                user.DisplayName = displayName;
+            await _context.SaveChangesAsync();
+        }
+    }
+
     public async Task UpdateLastLoginAsync(int userId)
     {
         var user = await _context.Users.FindAsync(userId);

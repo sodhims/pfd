@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using PFD.Shared.Interfaces;
 
 namespace PFD.Shared.Models;
 
@@ -18,6 +19,11 @@ public class Participant
 
     [MaxLength(50)]
     public string? Phone { get; set; }
+
+    /// <summary>
+    /// How this participant prefers to be notified
+    /// </summary>
+    public NotificationPreference NotificationPreference { get; set; } = NotificationPreference.Email;
 
     /// <summary>
     /// Number of meetings this participant has attended (for frequency-based suggestions)

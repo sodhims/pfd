@@ -58,7 +58,13 @@
       "Bash(wmic process where \"name like ''%PFD%''\" delete)",
       "Bash(taskkill //F //PID 64084)",
       "Bash(dir \"R:\\\\PFD\\\\src\\\\PFD.Blazor\\\\Components\\\\Pages\\\\Planner.razor\")",
-      "Bash(taskkill //F //PID 72916)"
+      "Bash(taskkill //F //PID 72916)",
+      "Bash(curl:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(sqlcmd:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(cd:*)"
     ]
   }
 }

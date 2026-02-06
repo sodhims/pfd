@@ -12,6 +12,8 @@
 @inject NavigationManager Navigation
 @inject IGroupService GroupService
 @inject IOllamaService OllamaService
+@inject INotificationService NotificationService
+@inject IInsightHistoryService InsightHistoryService
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
@@ -127,12 +129,113 @@
                     }
                 </div>
             }
-            <div class="setting-group">
-                <label>Calendars</label>
-                <button class="settings-link-btn" @onclick="GoToSettings">
-                    ⚙ Manage Credentials
+            <!-- Manage Credentials Section -->
+            <div class="setting-group credentials-section">
+                <button class="credentials-toggle-btn" @onclick="ToggleCredentialsSection">
+                    <span class="cred-icon">&#128273;</span>
+                    <span>Manage Credentials</span>
+                    <span class="toggle-arrow @(ShowCredentialsSection ? "open" : "")">&#9662;</span>
                 </button>
+
+                @if (ShowCredentialsSection)
+                {
+                    <div class="credentials-dropdowns">
+                        <!-- Calendar Credentials -->
+                        <div class="cred-dropdown">
+                            <button class="cred-dropdown-btn" @onclick="ToggleCalendarCredentials">
+                                <span>&#128197; Calendars</span>
+                                <span class="dropdown-arrow @(ShowCalendarCredentials ? "open" : "")">&#9656;</span>
+                            </button>
+                            @if (ShowCalendarCredentials)
+                            {
+                                <div class="cred-dropdown-content">
+                                    <button class="settings-link-btn" @onclick="GoToSettings">
+                                        ⚙ Configure API Keys
+                                    </button>
+                                    @if (HasGoogleCredentials || HasMicrosoftCredentials)
+                                    {
+                                        <div class="connected-services">
+                                            @if (HasGoogleCredentials)
+                                            {
+                                                <span class="service-badge google">Google @(IsGoogleConnected ? "✓" : "")</span>
+                                            }
+                                            @if (HasMicrosoftCredentials)
+                                            {
+                                                <span class="service-badge microsoft">Microsoft @(IsMicrosoftConnected ? "✓" : "")</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Personal Info -->
+                        <div class="cred-dropdown">
+                            <button class="cred-dropdown-btn" @onclick="TogglePersonalInfo">
+                                <span>&#128100; Personal</span>
+                                <span class="dropdown-arrow @(ShowPersonalInfo ? "open" : "")">&#9656;</span>
+                            </button>
+                            @if (ShowPersonalInfo)
+                            {
+                                <div class="cred-dropdown-content personal-info">
+                                    <div class="info-field">
+                                        <label>Display Name</label>
+                                        <input type="text" @bind="ProfileDisplayName" placeholder="Your name" />
+                                    </div>
+                                    <div class="info-field">
+                                        <label>Email</label>
+                                        <input type="email" @bind="ProfileEmail" placeholder="your@email.com" />
+                                    </div>
+                                    <div class="info-field">
+                                        <label>Phone</label>
+                                        <input type="tel" @bind="ProfilePhone" placeholder="+1 234 567 8900" />
+                                    </div>
+                                    <div class="info-field">
+                                        <label>Address (optional)</label>
+                                        <input type="text" @bind="ProfileAddress" placeholder="123 Main St, City" />
+                                    </div>
+                                    <button class="save-profile-btn" @onclick="SaveProfile">
+                                        @(IsSavingProfile ? "Saving..." : "Save")
+                                    </button>
+                                    @if (!string.IsNullOrEmpty(ProfileMessage))
+                                    {
+                                        <div class="profile-message @(ProfileMessage.Contains("Error") ? "error" : "success")">@ProfileMessage</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Other Credentials -->
+                        <div class="cred-dropdown">
+                            <button class="cred-dropdown-btn" @onclick="ToggleOtherCredentials">
+                                <span>&#128274; Other</span>
+                                <span class="dropdown-arrow @(ShowOtherCredentials ? "open" : "")">&#9656;</span>
+                            </button>
+                            @if (ShowOtherCredentials)
+                            {
+                                <div class="cred-dropdown-content other-creds">
+                                    <div class="cred-item">
+                                        <span class="cred-label">SendGrid (Email)</span>
+                                        <span class="cred-status @(NotificationServiceAvailable ? "configured" : "")">
+                                            @(NotificationServiceAvailable ? "✓" : "—")
+                                        </span>
+                                    </div>
+                                    <div class="cred-item">
+                                        <span class="cred-label">Twilio (SMS)</span>
+                                        <span class="cred-status">—</span>
+                                    </div>
+                                    <div class="cred-item">
+                                        <span class="cred-label">Claude AI</span>
+                                        <span class="cred-status configured">✓</span>
+                                    </div>
+                                    <p class="cred-note">Set in appsettings.json</p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
+
             <div class="setting-group user-section">
                 <label>Signed in as</label>
                 <span class="username">@CurrentUsername</span>
@@ -855,11 +958,26 @@
                                     </div>
                                 }
                             </div>
-                            @if (IsMeetingTask(ParticipantsTask) && ParticipantsTask.Participants.Any(p => !string.IsNullOrEmpty(p.Participant.Email)))
+                            @if (IsMeetingTask(ParticipantsTask) && ParticipantsTask.Participants.Any(p => !string.IsNullOrEmpty(p.Participant.Email) || !string.IsNullOrEmpty(p.Participant.Phone)))
                             {
-                                <button class="send-all-invites-btn" @onclick="SendAllEmailInvites">
-                                    &#128231; Email All Invitees
-                                </button>
+                                <div class="invite-buttons">
+                                    @if (NotificationServiceAvailable)
+                                    {
+                                        <button class="send-all-invites-btn primary" @onclick="SendNotificationsToAll" disabled="@IsSendingNotifications">
+                                            @if (IsSendingNotifications)
+                                            {
+                                                <span>Sending...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>&#128232; Send Invites</span>
+                                            }
+                                        </button>
+                                    }
+                                    <button class="send-all-invites-btn" @onclick="SendAllEmailInvites">
+                                        &#128231; Open Email Client
+                                    </button>
+                                </div>
                             }
                         </div>
                     }
@@ -1063,6 +1181,78 @@
                         }
                     </div>
                 }
+
+                <!-- Insight History (shows trends from raw data, not AI-on-AI) -->
+                <div class="ai-section insight-history-section">
+                    <div class="ai-section-title clickable" @onclick="ToggleInsightHistory">
+                        &#128200; Insight History @(ShowInsightHistory ? "&#9660;" : "&#9654;")
+                    </div>
+                    @if (ShowInsightHistory)
+                    {
+                        @if (InsightHistoryList.Any())
+                        {
+                            <div class="insight-history-list">
+                                @foreach (var insight in InsightHistoryList.Take(5))
+                                {
+                                    <div class="insight-history-item @(insight == SelectedHistoryInsight ? "selected" : "")"
+                                         @onclick="() => SelectHistoryInsight(insight)">
+                                        <div class="history-date">@insight.PeriodEnd.ToString("MMM dd")</div>
+                                        <div class="history-stats">
+                                            <span class="history-rate" title="Completion rate">@(GetSnapshotCompletionRate(insight))%</span>
+                                            <span class="history-trend" title="Trend">@GetTrendIndicator(insight)</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            @if (SelectedHistoryInsight != null)
+                            {
+                                <div class="insight-history-detail">
+                                    <div class="history-detail-header">
+                                        <span>@SelectedHistoryInsight.PeriodStart.ToString("MMM dd") - @SelectedHistoryInsight.PeriodEnd.ToString("MMM dd")</span>
+                                    </div>
+                                    <div class="history-snapshot">
+                                        @{
+                                            var snapshot = GetSnapshot(SelectedHistoryInsight);
+                                            if (snapshot != null)
+                                            {
+                                                <div class="snapshot-stat">
+                                                    <span class="stat-label">Tasks:</span>
+                                                    <span class="stat-value">@snapshot.CompletedTasks / @snapshot.TotalTasks</span>
+                                                </div>
+                                                <div class="snapshot-stat">
+                                                    <span class="stat-label">Completion:</span>
+                                                    <span class="stat-value">@snapshot.CompletionRate%</span>
+                                                </div>
+                                                <div class="snapshot-stat">
+                                                    <span class="stat-label">Overdue:</span>
+                                                    <span class="stat-value @(snapshot.OverdueTasks > 0 ? "warning" : "")">@snapshot.OverdueTasks</span>
+                                                </div>
+                                                @if (snapshot.PreviousCompletionRate.HasValue)
+                                                {
+                                                    var change = snapshot.CompletionRate - snapshot.PreviousCompletionRate.Value;
+                                                    <div class="snapshot-stat">
+                                                        <span class="stat-label">Change:</span>
+                                                        <span class="stat-value @(change >= 0 ? "positive" : "negative")">
+                                                            @(change >= 0 ? "+" : "")@change.ToString("F1")%
+                                                        </span>
+                                                    </div>
+                                                }
+                                            }
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(SelectedHistoryInsight.AiInsightText))
+                                    {
+                                        <div class="history-ai-text">@SelectedHistoryInsight.AiInsightText</div>
+                                    }
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <p class="no-history">No insight history yet. Insights are saved automatically when generated.</p>
+                        }
+                    }
+                </div>
             }
         </div>
     }
@@ -1207,6 +1397,20 @@
     private bool ShowAiPanel { get; set; } = false;
     private bool IsAiLoading { get; set; } = false;
 
+    // Credentials section properties
+    private bool ShowCredentialsSection { get; set; } = false;
+    private bool ShowCalendarCredentials { get; set; } = false;
+    private bool ShowPersonalInfo { get; set; } = false;
+    private bool ShowOtherCredentials { get; set; } = false;
+
+    // Profile editing
+    private string ProfileDisplayName { get; set; } = "";
+    private string ProfileEmail { get; set; } = "";
+    private string ProfilePhone { get; set; } = "";
+    private string ProfileAddress { get; set; } = "";
+    private bool IsSavingProfile { get; set; } = false;
+    private string ProfileMessage { get; set; } = "";
+
     // Group properties
     private List<TaskGroup> UserGroups { get; set; } = new();
     private bool ShowGroupModal { get; set; } = false;
@@ -1224,10 +1428,17 @@
     private string NewParticipantEmail { get; set; } = "";
     private string NewParticipantPhone { get; set; } = "";
     private string ParticipantsMessage { get; set; } = "";
+    private bool IsSendingNotifications { get; set; } = false;
+    private bool NotificationServiceAvailable { get; set; } = false;
 
     // Share task modal
     private DailyTask? ShareTask { get; set; }
     private int SelectedShareGroupId { get; set; } = 0;
+
+    // Insight History
+    private bool ShowInsightHistory { get; set; } = false;
+    private List<InsightHistory> InsightHistoryList { get; set; } = new();
+    private InsightHistory? SelectedHistoryInsight { get; set; }
     private string ShareMessage { get; set; } = "";
 
     // Task Actions (Agentic AI)
@@ -1355,6 +1566,9 @@
 
             // Check if Ollama is available for task actions
             await CheckOllamaAvailability();
+
+            // Check if notification service is available
+            await CheckNotificationServiceAvailability();
 
             await LoadTasksAsync();
 
@@ -1563,20 +1777,29 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
+        // Parse time from task text (e.g., "meeting at 1:00 pm" -> time: 13:00)
+        var parseResult = TaskTimeParser.Parse(NewTaskText);
+
         var task = new DailyTask
         {
-            Title = NewTaskText,
+            Title = parseResult.CleanedTitle,
             TaskDate = SelectedDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
-            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText),
+            IsAllDay = true,
             UserId = CurrentUserId
         };
 
-        // Parse scheduled time if provided
-        if (!string.IsNullOrWhiteSpace(NewTaskTimeText) && TimeSpan.TryParse(NewTaskTimeText, out var time))
+        // Priority 1: Use manually entered time from time input field
+        if (!string.IsNullOrWhiteSpace(NewTaskTimeText) && TimeSpan.TryParse(NewTaskTimeText, out var manualTime))
         {
-            task.ScheduledTime = time;
+            task.ScheduledTime = manualTime;
+            task.IsAllDay = false;
+        }
+        // Priority 2: Use parsed time from task text
+        else if (parseResult.ScheduledTime.HasValue)
+        {
+            task.ScheduledTime = parseResult.ScheduledTime.Value;
             task.IsAllDay = false;
         }
 
@@ -1732,6 +1955,83 @@
         if (ShowAiPanel)
         {
             _ = LoadAiInsightsAsync();
+        }
+    }
+
+    // Credentials section toggles
+    private void ToggleCredentialsSection()
+    {
+        ShowCredentialsSection = !ShowCredentialsSection;
+        if (!ShowCredentialsSection)
+        {
+            ShowCalendarCredentials = false;
+            ShowPersonalInfo = false;
+            ShowOtherCredentials = false;
+        }
+    }
+
+    private void ToggleCalendarCredentials()
+    {
+        ShowCalendarCredentials = !ShowCalendarCredentials;
+    }
+
+    private async Task TogglePersonalInfo()
+    {
+        ShowPersonalInfo = !ShowPersonalInfo;
+        if (ShowPersonalInfo)
+        {
+            // Load current profile data
+            var user = await AuthService.GetUserByIdAsync(CurrentUserId);
+            if (user != null)
+            {
+                ProfileDisplayName = user.DisplayName ?? user.Username;
+                ProfileEmail = user.Email ?? "";
+                ProfilePhone = user.Phone ?? "";
+                ProfileAddress = user.Address ?? "";
+            }
+            ProfileMessage = "";
+        }
+    }
+
+    private void ToggleOtherCredentials()
+    {
+        ShowOtherCredentials = !ShowOtherCredentials;
+    }
+
+    private async Task SaveProfile()
+    {
+        if (IsSavingProfile) return;
+
+        IsSavingProfile = true;
+        ProfileMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            await AuthService.UpdateUserProfileAsync(
+                CurrentUserId,
+                string.IsNullOrWhiteSpace(ProfileEmail) ? null : ProfileEmail.Trim(),
+                string.IsNullOrWhiteSpace(ProfilePhone) ? null : ProfilePhone.Trim(),
+                string.IsNullOrWhiteSpace(ProfileAddress) ? null : ProfileAddress.Trim(),
+                string.IsNullOrWhiteSpace(ProfileDisplayName) ? null : ProfileDisplayName.Trim()
+            );
+
+            // Update displayed username if changed
+            if (!string.IsNullOrWhiteSpace(ProfileDisplayName))
+            {
+                CurrentUsername = ProfileDisplayName.Trim();
+            }
+
+            ProfileMessage = "Saved!";
+        }
+        catch (Exception ex)
+        {
+            ProfileMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsSavingProfile = false;
+            StateHasChanged();
         }
     }
 
@@ -1915,10 +2215,13 @@
             var overdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
             var todayTasks = Tasks.ToList();
 
-            // Get insights
-            var insights = await AnalysisService.GetInsightsAsync(recentTasks);
+            // Get insights with history tracking (uses raw data comparison, not AI-on-AI)
+            var insights = await AnalysisService.GetInsightsAsync(recentTasks, CurrentUserId);
             AiSummary = insights.ProductivitySummary;
             AiSuggestions = insights.Suggestions;
+
+            // Load insight history for display
+            await LoadInsightHistoryAsync();
 
             // Get prioritization
             if (todayTasks.Any() || overdueTasks.Any())
@@ -1971,6 +2274,66 @@
         >= 50 => "medium",
         _ => "low"
     };
+
+    // Insight History Methods
+    private async Task LoadInsightHistoryAsync()
+    {
+        try
+        {
+            InsightHistoryList = await InsightHistoryService.GetInsightHistoryAsync(CurrentUserId, "weekly", limit: 10);
+        }
+        catch
+        {
+            InsightHistoryList = new();
+        }
+    }
+
+    private void ToggleInsightHistory()
+    {
+        ShowInsightHistory = !ShowInsightHistory;
+        if (ShowInsightHistory && !InsightHistoryList.Any())
+        {
+            _ = LoadInsightHistoryAsync();
+        }
+    }
+
+    private void SelectHistoryInsight(InsightHistory insight)
+    {
+        SelectedHistoryInsight = SelectedHistoryInsight == insight ? null : insight;
+    }
+
+    private string GetSnapshotCompletionRate(InsightHistory insight)
+    {
+        var snapshot = GetSnapshot(insight);
+        return snapshot?.CompletionRate.ToString("F0") ?? "?";
+    }
+
+    private string GetTrendIndicator(InsightHistory insight)
+    {
+        var snapshot = GetSnapshot(insight);
+        if (snapshot?.TrendDirection == null) return "-";
+        return snapshot.TrendDirection switch
+        {
+            "improving" => "&#9650;", // up arrow
+            "declining" => "&#9660;", // down arrow
+            _ => "&#8212;" // dash
+        };
+    }
+
+    private TaskDataSnapshot? GetSnapshot(InsightHistory insight)
+    {
+        if (string.IsNullOrEmpty(insight.RawDataSnapshot))
+            return null;
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<TaskDataSnapshot>(insight.RawDataSnapshot,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // Schedule analysis methods
     private void AnalyzeSchedule(List<DailyTask> todayTasks, List<DailyTask> overdueTasks)
@@ -2900,6 +3263,70 @@ Best regards";
         }
     }
 
+    private async Task CheckNotificationServiceAvailability()
+    {
+        try
+        {
+            NotificationServiceAvailable = await NotificationService.IsAvailableAsync();
+        }
+        catch
+        {
+            NotificationServiceAvailable = false;
+        }
+    }
+
+    private async Task SendNotificationsToAll()
+    {
+        if (ParticipantsTask == null) return;
+
+        var participants = ParticipantsTask.Participants
+            .Where(p => p.Participant.NotificationPreference != NotificationPreference.None)
+            .Select(p => p.Participant)
+            .ToList();
+
+        if (!participants.Any())
+        {
+            ParticipantsMessage = "No participants with notification preferences set";
+            StateHasChanged();
+            return;
+        }
+
+        IsSendingNotifications = true;
+        StateHasChanged();
+
+        try
+        {
+            var message = EmailNotificationService.CreateMeetingInvite(ParticipantsTask, CurrentUsername);
+            var results = await NotificationService.SendBulkNotificationAsync(participants, message);
+
+            var successful = results.Count(r => r.Success);
+            var failed = results.Count(r => !r.Success);
+
+            if (failed == 0)
+            {
+                ParticipantsMessage = $"Sent {successful} invitation(s) successfully!";
+            }
+            else if (successful > 0)
+            {
+                ParticipantsMessage = $"Sent {successful} invitation(s). {failed} failed.";
+            }
+            else
+            {
+                var errors = string.Join("; ", results.Where(r => !r.Success).Select(r => r.ErrorMessage).Distinct().Take(2));
+                ParticipantsMessage = $"Failed to send invitations: {errors}";
+            }
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error sending invitations: {ex.Message}";
+        }
+        finally
+        {
+            IsSendingNotifications = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task ParseTaskActionsAsync()
     {
         if (!IsOllamaAvailable) return;
@@ -3086,10 +3513,40 @@ Best regards";
     {
         // Open calendar to create event
         var title = action.Subject ?? task.Title;
-        var details = action.Body ?? "";
+        var details = action.Body ?? task.Description ?? "";
 
-        // Google Calendar quick add
-        var calendarUrl = $"https://calendar.google.com/calendar/render?action=TEMPLATE&text={Uri.EscapeDataString(title)}&details={Uri.EscapeDataString(details)}";
+        // Build date/time parameters
+        // Google Calendar uses format: YYYYMMDDTHHMMSS (local time) or with Z for UTC
+        var startDate = task.TaskDate;
+        var startTime = task.ScheduledTime ?? new TimeSpan(9, 0, 0); // Default 9 AM if no time
+        var startDateTime = startDate.Add(startTime);
+        var endDateTime = startDateTime.AddMinutes(task.DurationMinutes > 0 ? task.DurationMinutes : 60);
+
+        // Format: 20260209T130000/20260209T140000 (local time format)
+        var dateFormat = "yyyyMMdd'T'HHmmss";
+        var dates = $"{startDateTime.ToString(dateFormat)}/{endDateTime.ToString(dateFormat)}";
+
+        // Add participants as guests
+        var guestEmails = "";
+        if (task.Participants != null && task.Participants.Any())
+        {
+            var emails = task.Participants
+                .Where(p => !string.IsNullOrEmpty(p.Participant?.Email))
+                .Select(p => p.Participant.Email)
+                .ToList();
+            if (emails.Any())
+            {
+                guestEmails = "&add=" + string.Join("&add=", emails.Select(e => Uri.EscapeDataString(e!)));
+            }
+        }
+
+        // Google Calendar URL with all parameters
+        var calendarUrl = $"https://calendar.google.com/calendar/render?action=TEMPLATE" +
+            $"&text={Uri.EscapeDataString(title)}" +
+            $"&dates={dates}" +
+            $"&details={Uri.EscapeDataString(details)}" +
+            guestEmails;
+
         await JSRuntime.InvokeVoidAsync("open", calendarUrl);
     }
 }

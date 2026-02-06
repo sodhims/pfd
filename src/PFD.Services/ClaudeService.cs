@@ -277,4 +277,13 @@ Be encouraging but honest. Focus on actionable improvements.";
         public string? Summary { get; set; }
         public List<string>? Suggestions { get; set; }
     }
+
+    public async Task<CalendarAnalysis> AnalyzeCalendarPatternsAsync(List<DailyTask> tasks, int daysToAnalyze = 30)
+    {
+        // Stub implementation - Claude calendar analysis
+        var result = new CalendarAnalysis();
+        result.Summary = "Calendar analysis via Claude - feature in development.";
+        result.GeneratedAt = DateTime.UtcNow;
+        return await Task.FromResult(result);
+    }
 }

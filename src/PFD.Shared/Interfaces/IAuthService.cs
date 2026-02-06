@@ -9,6 +9,7 @@ public interface IAuthService
     Task<bool> UsernameExistsAsync(string username);
     Task<User?> GetUserByIdAsync(int userId);
     Task UpdateUserSettingsAsync(int userId, string theme, bool isDailyView, bool useLargeText);
+    Task UpdateUserProfileAsync(int userId, string? email, string? phone, string? address, string? displayName);
     Task UpdateLastLoginAsync(int userId);
 
     // Admin methods
