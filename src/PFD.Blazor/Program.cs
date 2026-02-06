@@ -18,7 +18,7 @@ builder.Services.AddControllers();
 var azureSqlConnection = builder.Configuration.GetConnectionString("AzureSql");
 if (!string.IsNullOrEmpty(azureSqlConnection))
 {
-    // Azure SQL Database with connection resiliency for auto-pause
+    // Azure SQL Database - use Transient lifetime to avoid concurrency issues in Blazor Server
     builder.Services.AddDbContext<PfdDbContext>(options =>
         options.UseSqlServer(azureSqlConnection, sqlOptions =>
         {
@@ -27,27 +27,27 @@ if (!string.IsNullOrEmpty(azureSqlConnection))
                 maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null);
             sqlOptions.CommandTimeout(60);
-        }));
+        }), ServiceLifetime.Transient);
     Console.WriteLine("Using Azure SQL Database");
 }
 else
 {
-    // Local SQLite fallback
+    // Local SQLite fallback - use Transient lifetime
     var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PFD", "pfd.db");
     Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-    builder.Services.AddDbContext<PfdDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
+    builder.Services.AddDbContext<PfdDbContext>(options => options.UseSqlite($"Data Source={dbPath}"), ServiceLifetime.Transient);
     Console.WriteLine($"Using local SQLite: {dbPath}");
 }
 
-// Repositories and Services
-builder.Services.AddScoped<TaskRepository>();
-builder.Services.AddScoped<GroupRepository>();
-builder.Services.AddScoped<ITaskService, TaskService>();
-builder.Services.AddScoped<IGroupService, GroupService>();
+// Repositories and Services - Use Transient for Blazor Server to avoid DbContext concurrency
+builder.Services.AddTransient<TaskRepository>();
+builder.Services.AddTransient<GroupRepository>();
+builder.Services.AddTransient<ITaskService, TaskService>();
+builder.Services.AddTransient<IGroupService, GroupService>();
 builder.Services.AddScoped<IOllamaService, OllamaService>();
 builder.Services.AddScoped<IAnalysisService, AnalysisService>();
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<ICalendarCredentialsService, CalendarCredentialsService>();
+builder.Services.AddTransient<IAuthService, AuthService>();
+builder.Services.AddTransient<ICalendarCredentialsService, CalendarCredentialsService>();
 
 // Claude AI Service - set Claude:ApiKey in appsettings.json or CLAUDE_API_KEY env var
 var claudeApiKey = builder.Configuration["Claude:ApiKey"] ?? Environment.GetEnvironmentVariable("CLAUDE_API_KEY") ?? "";

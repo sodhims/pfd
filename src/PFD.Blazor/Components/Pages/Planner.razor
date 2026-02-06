@@ -7,10 +7,11 @@
 @inject IAnalysisService AnalysisService
 @inject IAuthService AuthService
 @inject ICalendarCredentialsService CredentialsService
-@inject IGroupService GroupService
 @inject IServiceProvider ServiceProvider
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
+@inject IGroupService GroupService
+@inject IOllamaService OllamaService
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
@@ -132,25 +133,25 @@
                     ⚙ Manage Credentials
                 </button>
             </div>
-            </div>
-            <div class="setting-group">
-                <label>Groups</label>
-                <div class="group-list">
-                    @foreach (var group in UserGroups)
-                    {
-                        <div class="group-item">
-                            <span class="group-name">@group.Name</span>
-                            @if (group.LeaderUserId == CurrentUserId)
-                            { <span class="leader-badge">Leader</span> }
-                            <button class="manage-group-btn" @onclick="() => OpenGroupManager(group)">...</button>
-                        </div>
-                    }
-                </div>
-                <button class="create-group-btn" @onclick="ShowCreateGroupDialog">+ New Group</button>
             <div class="setting-group user-section">
                 <label>Signed in as</label>
                 <span class="username">@CurrentUsername</span>
                 <button class="logout-btn" @onclick="Logout">Logout</button>
+            </div>
+
+            <!-- Groups Section -->
+            <div class="setting-group groups-section">
+                <label>Groups</label>
+                <div class="groups-list">
+                    @foreach (var group in UserGroups)
+                    {
+                        <div class="group-item">
+                            <span class="group-name">@group.Name</span>
+                            <button class="group-manage-btn" @onclick="() => OpenGroupModal(group)">...</button>
+                        </div>
+                    }
+                </div>
+                <button class="create-group-btn" @onclick="OpenCreateGroupModal">+ Create Group</button>
             </div>
         </div>
     </div>
@@ -171,27 +172,6 @@
                    placeholder="9:00" pattern="[0-9]{1,2}:[0-9]{2}" title="Time (e.g. 9:00, 14:30)" />
             <button @onclick="AddTask">Add</button>
         </div>
-
-        <!-- Waiting Section (previously Overdue) -->
-        @if (OverdueTasks.Any() && IsDailyView)
-        {
-            <div class="waiting-section">
-                <div class="waiting-header">
-                    <span class="waiting-icon">&#9203;</span>
-                    <span>Waiting (@OverdueTasks.Count)</span>
-                </div>
-                @foreach (var task in OverdueTasks)
-                {
-                    <div class="task-row waiting">
-                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
-                        <span class="task-title">@task.Title</span>
-                        <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
-                        <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
-                        <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
-                    </div>
-                }
-            </div>
-        }
 
         <!-- Calendar Tabs - Always show -->
         <div class="calendar-tabs-container">
@@ -335,13 +315,37 @@
         <div class="task-list" style="@(ActiveCalendarTab != CalendarSource.Integrated ? "display:none" : "")">
             @if (IsDailyView)
             {
-                @if (ScheduledTasks.Any())
+                <!-- Task Section Tabs -->
+                <div class="task-section-tabs">
+                    <button class="section-tab @(ActiveTaskSection == TaskSection.Scheduled ? "active" : "")"
+                            @onclick="() => SetTaskSection(TaskSection.Scheduled)">
+                        <span class="tab-icon">&#128337;</span> Scheduled
+                        @if (ScheduledTasks.Any())
+                        {
+                            <span class="tab-count">@ScheduledTasks.Count</span>
+                        }
+                    </button>
+                    <button class="section-tab @(ActiveTaskSection == TaskSection.Tasks ? "active" : "")"
+                            @onclick="() => SetTaskSection(TaskSection.Tasks)">
+                        <span class="tab-icon">&#128203;</span> Tasks
+                        @if (AllDayTasks.Any())
+                        {
+                            <span class="tab-count">@AllDayTasks.Count</span>
+                        }
+                    </button>
+                    <button class="section-tab @(ActiveTaskSection == TaskSection.Waiting ? "active" : "")"
+                            @onclick="() => SetTaskSection(TaskSection.Waiting)">
+                        <span class="tab-icon">&#9203;</span> Waiting
+                        @if (OverdueTasks.Any())
+                        {
+                            <span class="tab-count">@OverdueTasks.Count</span>
+                        }
+                    </button>
+                </div>
+
+                @if (ActiveTaskSection == TaskSection.Scheduled)
                 {
                     <div class="scheduled-section">
-                        <div class="section-header">
-                            <span class="section-icon">&#128337;</span>
-                            <span>Scheduled</span>
-                        </div>
                         @foreach (var task in ScheduledTasks)
                         {
                             var isPast = IsTaskInPast(task);
@@ -360,12 +364,62 @@
                                     <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
                                           @ondblclick="() => StartEditTask(task)">@task.Title</span>
                                 }
+                                @if (task.Participants.Any())
+                                {
+                                    <div class="task-participants">
+                                        @foreach (var tp in task.Participants.Take(3))
+                                        {
+                                            <span class="participant-chip" title="@tp.Participant.Name">@GetInitials(tp.Participant.Name)</span>
+                                        }
+                                        @if (task.Participants.Count > 3)
+                                        {
+                                            <span class="participant-chip more">+@(task.Participants.Count - 3)</span>
+                                        }
+                                    </div>
+                                }
+                                <button class="participants-btn" title="Manage participants" @onclick="() => OpenParticipantsModal(task)">&#128101;</button>
+                                @if (task.GroupId.HasValue)
+                                {
+                                    <span class="group-badge" title="Shared with @(task.Group?.Name ?? "group")">&#128279; @(task.Group?.Name ?? "Group")</span>
+                                    <button class="unshare-btn" title="Unshare from group" @onclick="() => UnshareTask(task)">&#10006;</button>
+                                }
+                                else if (UserGroups.Any())
+                                {
+                                    <button class="share-btn" title="Share with group" @onclick="() => OpenShareModal(task)">&#128279;</button>
+                                }
                                 @if (task.DurationMinutes != 30)
                                 {
                                     <span class="task-duration">@task.DurationMinutes min</span>
                                 }
+                                @{ var scheduledAction = GetTaskAction(task); }
+                                @if (scheduledAction != null && scheduledAction.ActionType != TaskActionType.None)
+                                {
+                                    <div class="task-actions">
+                                        @if (scheduledAction.ActionType == TaskActionType.Email)
+                                        {
+                                            <button class="action-btn email-action" title="@GetActionTooltip(scheduledAction)" @onclick="() => ExecuteTaskAction(task, scheduledAction)">&#128231;</button>
+                                        }
+                                        else if (scheduledAction.ActionType == TaskActionType.Call)
+                                        {
+                                            <button class="action-btn call-action" title="@GetActionTooltip(scheduledAction)" @onclick="() => ExecuteTaskAction(task, scheduledAction)">&#128222;</button>
+                                        }
+                                        else if (scheduledAction.ActionType == TaskActionType.Document)
+                                        {
+                                            <button class="action-btn doc-action" title="@GetActionTooltip(scheduledAction)" @onclick="() => ExecuteTaskAction(task, scheduledAction)">&#128196;</button>
+                                        }
+                                        else if (scheduledAction.ActionType == TaskActionType.Website)
+                                        {
+                                            <button class="action-btn web-action" title="@GetActionTooltip(scheduledAction)" @onclick="() => ExecuteTaskAction(task, scheduledAction)">&#127760;</button>
+                                        }
+                                        else if (scheduledAction.ActionType == TaskActionType.Meeting)
+                                        {
+                                            <button class="action-btn meeting-action" title="@GetActionTooltip(scheduledAction)" @onclick="() => ExecuteTaskAction(task, scheduledAction)">&#128197;</button>
+                                        }
+                                    </div>
+                                }
                                 @if (!isPast)
                                 {
+                                    <button class="reschedule-btn" title="Reschedule to another day" @onclick="() => OpenRescheduleModal(task)">&#9193;</button>
                                     <button class="clear-time-btn" title="Remove time" @onclick="() => ClearTaskTime(task)">&#10006;</button>
                                     <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
                                 }
@@ -374,36 +428,123 @@
                     </div>
                 }
 
-                @if (AllDayTasks.Any())
+                @if (ActiveTaskSection == TaskSection.Tasks)
                 {
                     <div class="allday-section">
-                        <div class="section-header">
-                            <span class="section-icon">&#128203;</span>
-                            <span>Tasks</span>
-                        </div>
-                        @foreach (var task in AllDayTasks)
+                        @if (AllDayTasks.Any())
                         {
-                            var isPast = IsTaskInPast(task);
-                            <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
-                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
-                                @if (EditingTaskId == task.Id)
-                                {
-                                    <input type="text" class="task-edit" @bind="EditingTaskText"
-                                           @onblur="SaveTaskEdit" @onkeydown="HandleEditKeyDown" />
-                                }
-                                else
-                                {
-                                    <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
-                                          @ondblclick="() => StartEditTask(task)">@task.Title</span>
-                                }
-                                @if (!isPast)
-                                {
-                                    <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">&#128337;</button>
-                                    <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
-                                }
-                            </div>
+                            @foreach (var task in AllDayTasks)
+                            {
+                                var isPast = IsTaskInPast(task);
+                                <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
+                                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
+                                    @if (EditingTaskId == task.Id)
+                                    {
+                                        <input type="text" class="task-edit" @bind="EditingTaskText"
+                                               @onblur="SaveTaskEdit" @onkeydown="HandleEditKeyDown" />
+                                    }
+                                    else
+                                    {
+                                        <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
+                                              @ondblclick="() => StartEditTask(task)">@task.Title</span>
+                                    }
+                                    @if (task.Participants.Any())
+                                    {
+                                        <div class="task-participants">
+                                            @foreach (var tp in task.Participants.Take(3))
+                                            {
+                                                <span class="participant-chip" title="@tp.Participant.Name">@GetInitials(tp.Participant.Name)</span>
+                                            }
+                                            @if (task.Participants.Count > 3)
+                                            {
+                                                <span class="participant-chip more">+@(task.Participants.Count - 3)</span>
+                                            }
+                                        </div>
+                                    }
+                                    <button class="participants-btn" title="Manage participants" @onclick="() => OpenParticipantsModal(task)">&#128101;</button>
+                                    @if (task.GroupId.HasValue)
+                                    {
+                                        <span class="group-badge" title="Shared with @(task.Group?.Name ?? "group")">&#128279; @(task.Group?.Name ?? "Group")</span>
+                                        <button class="unshare-btn" title="Unshare from group" @onclick="() => UnshareTask(task)">&#10006;</button>
+                                    }
+                                    else if (UserGroups.Any())
+                                    {
+                                        <button class="share-btn" title="Share with group" @onclick="() => OpenShareModal(task)">&#128279;</button>
+                                    }
+                                    @{ var allDayAction = GetTaskAction(task); }
+                                    @if (allDayAction != null && allDayAction.ActionType != TaskActionType.None)
+                                    {
+                                        <div class="task-actions">
+                                            @if (allDayAction.ActionType == TaskActionType.Email)
+                                            {
+                                                <button class="action-btn email-action" title="@GetActionTooltip(allDayAction)" @onclick="() => ExecuteTaskAction(task, allDayAction)">&#128231;</button>
+                                            }
+                                            else if (allDayAction.ActionType == TaskActionType.Call)
+                                            {
+                                                <button class="action-btn call-action" title="@GetActionTooltip(allDayAction)" @onclick="() => ExecuteTaskAction(task, allDayAction)">&#128222;</button>
+                                            }
+                                            else if (allDayAction.ActionType == TaskActionType.Document)
+                                            {
+                                                <button class="action-btn doc-action" title="@GetActionTooltip(allDayAction)" @onclick="() => ExecuteTaskAction(task, allDayAction)">&#128196;</button>
+                                            }
+                                            else if (allDayAction.ActionType == TaskActionType.Website)
+                                            {
+                                                <button class="action-btn web-action" title="@GetActionTooltip(allDayAction)" @onclick="() => ExecuteTaskAction(task, allDayAction)">&#127760;</button>
+                                            }
+                                            else if (allDayAction.ActionType == TaskActionType.Meeting)
+                                            {
+                                                <button class="action-btn meeting-action" title="@GetActionTooltip(allDayAction)" @onclick="() => ExecuteTaskAction(task, allDayAction)">&#128197;</button>
+                                            }
+                                        </div>
+                                    }
+                                    @if (!isPast)
+                                    {
+                                        <button class="reschedule-btn" title="Move to another day" @onclick="() => OpenRescheduleModal(task)">&#9193;</button>
+                                        <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">&#128337;</button>
+                                        <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
+                                    }
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="no-tasks">No unscheduled tasks. Add one above!</div>
                         }
                     </div>
+                }
+
+                @if (ActiveTaskSection == TaskSection.Waiting)
+                {
+                    <div class="waiting-tab-section">
+                        @if (OverdueTasks.Any())
+                        {
+                            @foreach (var task in OverdueTasks)
+                            {
+                                <div class="task-row waiting @(task.ScheduledTime.HasValue ? "was-scheduled" : "")">
+                                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
+                                    @if (task.ScheduledTime.HasValue)
+                                    {
+                                        <span class="task-time waiting-time" title="Originally scheduled for @FormatTime(task.ScheduledTime)">
+                                            @FormatTime(task.ScheduledTime)
+                                        </span>
+                                    }
+                                    <span class="task-title">@task.Title</span>
+                                    <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
+                                    <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
+                                    <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="no-tasks">No waiting tasks. You're all caught up!</div>
+                        }
+                    </div>
+                }
+
+                @if (!ScheduledTasks.Any() && !AllDayTasks.Any() && !OverdueTasks.Any())
+                {
+                    <div class="no-tasks">No tasks for this day. Add one above!</div>
                 }
             }
             else
@@ -585,6 +726,246 @@
         </div>
     }
 
+    <!-- Reschedule Modal -->
+    @if (ReschedulingTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRescheduleModal">
+            <div class="reschedule-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#9193; Reschedule Task</span>
+                    <button class="close-btn" @onclick="CloseRescheduleModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-task-title">@ReschedulingTask.Title</div>
+                    @if (ReschedulingTask.ScheduledTime.HasValue)
+                    {
+                        <div class="current-schedule">Currently: @ReschedulingTask.TaskDate.ToString("ddd, MMM d") at @FormatTime(ReschedulingTask.ScheduledTime)</div>
+                    }
+                    else
+                    {
+                        <div class="current-schedule">Currently: @ReschedulingTask.TaskDate.ToString("ddd, MMM d")</div>
+                    }
+
+                    <div class="quick-reschedule">
+                        <label>Quick options:</label>
+                        <div class="quick-buttons">
+                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), null)">Tomorrow</button>
+                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), new TimeSpan(9, 0, 0))">Tomorrow Morning</button>
+                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), new TimeSpan(14, 0, 0))">Tomorrow Afternoon</button>
+                        </div>
+                        <div class="quick-buttons" style="margin-top: 6px;">
+                            <button @onclick="() => QuickReschedule(GetNextWeekday(DateTime.Today, DayOfWeek.Monday), null)">Next Monday</button>
+                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(7), null)">Next Week</button>
+                        </div>
+                    </div>
+
+                    <div class="date-picker-row">
+                        <label>Or pick a date:</label>
+                        <input type="date" @bind="RescheduleTargetDate" min="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                    </div>
+
+                    <div class="time-entry-row">
+                        <label>Schedule for:</label>
+                        <div class="time-options">
+                            <button class="time-preset @(RescheduleTimePreset == "morning" ? "active" : "")"
+                                    @onclick='() => SetRescheduleTimePreset("morning")'>🌅 Morning (9am)</button>
+                            <button class="time-preset @(RescheduleTimePreset == "afternoon" ? "active" : "")"
+                                    @onclick='() => SetRescheduleTimePreset("afternoon")'>☀️ Afternoon (2pm)</button>
+                            <button class="time-preset @(RescheduleTimePreset == "evening" ? "active" : "")"
+                                    @onclick='() => SetRescheduleTimePreset("evening")'>🌙 Evening (6pm)</button>
+                            <button class="time-preset @(RescheduleTimePreset == "custom" ? "active" : "")"
+                                    @onclick='() => SetRescheduleTimePreset("custom")'>⏰ Custom</button>
+                            <button class="time-preset @(RescheduleTimePreset == "none" ? "active" : "")"
+                                    @onclick='() => SetRescheduleTimePreset("none")'>📋 No time</button>
+                        </div>
+                        @if (RescheduleTimePreset == "custom")
+                        {
+                            <div class="custom-time-input">
+                                <input type="text" @bind="RescheduleCustomTime" placeholder="e.g. 15:30 or 3:30 PM" />
+                            </div>
+                        }
+                    </div>
+
+                    @if (ReschedulingTask.ScheduledTime.HasValue && RescheduleTimePreset == "none")
+                    {
+                        <div class="keep-time-option">
+                            <label>
+                                <input type="checkbox" @bind="KeepScheduledTime" />
+                                Keep original time (@FormatTime(ReschedulingTask.ScheduledTime))
+                            </label>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseRescheduleModal">Cancel</button>
+                    <button class="save-btn" @onclick="ConfirmReschedule">Reschedule</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Participants/Invitees Modal -->
+    @if (ParticipantsTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseParticipantsModal">
+            <div class="participants-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#128101; @(IsMeetingTask(ParticipantsTask) ? "Meeting Invitees" : "Participants")</span>
+                    <button class="close-btn" @onclick="CloseParticipantsModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-task-title">@ParticipantsTask.Title</div>
+                    @if (ParticipantsTask.ScheduledTime.HasValue)
+                    {
+                        <div class="modal-task-time">@FormatTime(ParticipantsTask.ScheduledTime) on @ParticipantsTask.TaskDate.ToString("ddd, MMM d")</div>
+                    }
+
+                    <!-- Current participants/invitees -->
+                    @if (ParticipantsTask.Participants.Any())
+                    {
+                        <div class="current-participants">
+                            <label>@(IsMeetingTask(ParticipantsTask) ? "Invitees:" : "Current participants:")</label>
+                            <div class="participants-list">
+                                @foreach (var tp in ParticipantsTask.Participants)
+                                {
+                                    <div class="participant-item">
+                                        <span class="participant-avatar">@GetInitials(tp.Participant.Name)</span>
+                                        <div class="participant-info">
+                                            <span class="participant-name">@tp.Participant.Name</span>
+                                            @if (!string.IsNullOrEmpty(tp.Participant.Email))
+                                            {
+                                                <span class="participant-email">@tp.Participant.Email</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(tp.Participant.Phone))
+                                            {
+                                                <span class="participant-phone">@tp.Participant.Phone</span>
+                                            }
+                                        </div>
+                                        <div class="participant-actions">
+                                            @if (!string.IsNullOrEmpty(tp.Participant.Email))
+                                            {
+                                                <button class="invitee-action-btn email-btn" title="Send email invitation" @onclick="() => SendEmailInvite(tp.Participant)">&#128231;</button>
+                                            }
+                                            @if (!string.IsNullOrEmpty(tp.Participant.Phone))
+                                            {
+                                                <button class="invitee-action-btn call-btn" title="Call invitee" @onclick="() => CallInvitee(tp.Participant)">&#128222;</button>
+                                            }
+                                            <button class="remove-participant-btn" title="Remove" @onclick="() => RemoveParticipantFromTask(tp.Participant)">&#10005;</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            @if (IsMeetingTask(ParticipantsTask) && ParticipantsTask.Participants.Any(p => !string.IsNullOrEmpty(p.Participant.Email)))
+                            {
+                                <button class="send-all-invites-btn" @onclick="SendAllEmailInvites">
+                                    &#128231; Email All Invitees
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    <!-- Share with group members -->
+                    @if (IsMeetingTask(ParticipantsTask) && ParticipantsTask.GroupId.HasValue && GroupMembers.Any())
+                    {
+                        <div class="group-members-section">
+                            <label>Add to group members' calendars:</label>
+                            <div class="group-members-list">
+                                @foreach (var member in GroupMembers.Where(m => m.Id != CurrentUserId))
+                                {
+                                    <div class="group-member-item">
+                                        <span class="member-avatar">@GetInitials(member.Username)</span>
+                                        <span class="member-name">@member.Username</span>
+                                        <button class="add-to-calendar-btn" title="Add meeting to their calendar" @onclick="() => AddMeetingToMemberCalendar(member)">
+                                            &#128197; Add to Calendar
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Add participant -->
+                    <div class="add-participant-section">
+                        <label>Add @(IsMeetingTask(ParticipantsTask) ? "invitee" : "participant"):</label>
+                        <div class="add-participant-form">
+                            <div class="add-participant-row">
+                                <input type="text" @bind="NewParticipantName" placeholder="Name" class="participant-name-input" />
+                            </div>
+                            <div class="add-participant-row">
+                                <input type="email" @bind="NewParticipantEmail" placeholder="Email" class="participant-email-input" />
+                                <input type="tel" @bind="NewParticipantPhone" placeholder="Phone" class="participant-phone-input" />
+                            </div>
+                            <button class="add-participant-btn" @onclick="AddNewParticipant">Add</button>
+                        </div>
+                    </div>
+
+                    <!-- Recent participants -->
+                    @if (RecentParticipants.Any())
+                    {
+                        <div class="recent-participants">
+                            <label>Recent:</label>
+                            <div class="recent-chips">
+                                @foreach (var p in RecentParticipants.Where(rp => !ParticipantsTask.Participants.Any(tp => tp.ParticipantId == rp.Id)))
+                                {
+                                    <button class="recent-chip" @onclick="() => AddExistingParticipant(p)">
+                                        @p.Name
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(ParticipantsMessage))
+                    {
+                        <div class="participants-message @(ParticipantsMessage.Contains("Error") ? "error" : "")">@ParticipantsMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="save-btn" @onclick="CloseParticipantsModal">Done</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Share Task Modal -->
+    @if (ShareTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseShareModal">
+            <div class="share-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#128279; Share Task with Group</span>
+                    <button class="close-btn" @onclick="CloseShareModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-task-title">@ShareTask.Title</div>
+
+                    <div class="share-group-section">
+                        <label>Select a group to share with:</label>
+                        <div class="group-options">
+                            @foreach (var group in UserGroups)
+                            {
+                                <button class="group-option @(SelectedShareGroupId == group.Id ? "selected" : "")"
+                                        @onclick="() => SelectShareGroup(group.Id)">
+                                    <span class="group-icon">&#128101;</span>
+                                    <span class="group-name">@group.Name</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(ShareMessage))
+                    {
+                        <div class="share-message @(ShareMessage.Contains("Error") ? "error" : "success")">@ShareMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseShareModal">Cancel</button>
+                    <button class="save-btn" @onclick="ConfirmShareTask" disabled="@(SelectedShareGroupId == 0)">Share</button>
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- AI Insights Panel -->
     @if (ShowAiPanel)
     {
@@ -624,6 +1005,47 @@
                     </div>
                 }
 
+                <!-- Schedule Advice -->
+                @if (ScheduleAdvice.Any())
+                {
+                    <div class="ai-section schedule-advice-section">
+                        <div class="ai-section-title">&#128197; Schedule Advice</div>
+                        @foreach (var advice in ScheduleAdvice)
+                        {
+                            <div class="schedule-advice-item @advice.Type.ToLower()">
+                                <span class="advice-icon">@GetAdviceIcon(advice.Type)</span>
+                                <div class="advice-content">
+                                    <div class="advice-title">@advice.Title</div>
+                                    <div class="advice-description">@advice.Description</div>
+                                    @if (!string.IsNullOrEmpty(advice.ActionLabel))
+                                    {
+                                        <button class="advice-action-btn" @onclick="() => ApplyScheduleAdvice(advice)">
+                                            @advice.ActionLabel
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Time Gaps -->
+                @if (TimeGaps.Any())
+                {
+                    <div class="ai-section time-gaps-section">
+                        <div class="ai-section-title">&#9201; Available Time Slots</div>
+                        <div class="time-gaps-list">
+                            @foreach (var gap in TimeGaps.Take(4))
+                            {
+                                <div class="time-gap-item">
+                                    <span class="gap-time">@FormatTime(gap.Start) - @FormatTime(gap.End)</span>
+                                    <span class="gap-duration">@gap.DurationMinutes min</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <!-- Priority Tasks -->
                 @if (PrioritizedTasks.Any())
                 {
@@ -644,26 +1066,79 @@
             }
         </div>
     }
-    @if (ManagingGroup != null)
+
+    <!-- Group Management Modal -->
+    @if (ShowGroupModal)
     {
         <div class="modal-overlay" @onclick="CloseGroupModal">
             <div class="group-modal" @onclick:stopPropagation="true">
-                <div class="modal-header"><span>Manage: @ManagingGroup.Name</span><button class="close-btn" @onclick="CloseGroupModal">X</button></div>
-                <div class="modal-body">
-                    <label>Members</label>
-                    <div class="members-list">@foreach (var m in GroupMembers) { <div class="member-item"><span>@(m.DisplayName ?? m.Username)</span>@if (m.Id == ManagingGroup.LeaderUserId) { <span class="leader-badge">Leader</span> } else if (ManagingGroup.LeaderUserId == CurrentUserId) { <button class="remove-member-btn" @onclick="() => RemoveMember(m)">X</button> }</div> }</div>
-                    @if (ManagingGroup.LeaderUserId == CurrentUserId) { <div class="add-member-row"><select @bind="SelectedUserIdToAdd"><option value="0">-- Select --</option>@foreach (var u in AvailableUsersToAdd) { <option value="@u.Id">@(u.DisplayName ?? u.Username)</option> }</select><button @onclick="AddMember">Add</button></div><button class="delete-group-btn" @onclick="DeleteGroup">Delete Group</button> }
-                    @if (!string.IsNullOrEmpty(GroupModalMessage)) { <div>@GroupModalMessage</div> }
+                <div class="modal-header">
+                    <span>@(IsCreatingGroup ? "Create Group" : $"Manage: {SelectedGroup?.Name}")</span>
+                    <button class="close-btn" @onclick="CloseGroupModal">&#10005;</button>
                 </div>
-            </div>
-        </div>
-    }
-    @if (ShowCreateGroupModal)
-    {
-        <div class="modal-overlay" @onclick="CloseGroupModal">
-            <div class="group-modal" @onclick:stopPropagation="true">
-                <div class="modal-header"><span>Create Group</span><button class="close-btn" @onclick="CloseGroupModal">X</button></div>
-                <div class="modal-body"><input type="text" @bind="NewGroupName" placeholder="Group name" /><button @onclick="CreateGroup">Create</button></div>
+                <div class="modal-body">
+                    @if (IsCreatingGroup)
+                    {
+                        <div class="form-group">
+                            <label>Group Name</label>
+                            <input type="text" @bind="NewGroupName" placeholder="Enter group name..." />
+                        </div>
+                    }
+                    else if (SelectedGroup != null)
+                    {
+                        <div class="group-members">
+                            <h4>Members</h4>
+                            @if (GroupMembers.Any())
+                            {
+                                @foreach (var member in GroupMembers)
+                                {
+                                    <div class="member-row">
+                                        <span class="member-name">@(member.DisplayName ?? member.Username ?? "Unknown")</span>
+                                        <span class="member-role">@(member.Id == SelectedGroup.LeaderUserId ? "Leader" : "Member")</span>
+                                        @if (member.Id != SelectedGroup.LeaderUserId && SelectedGroup.LeaderUserId == CurrentUserId)
+                                        {
+                                            <button class="remove-member-btn" @onclick="() => RemoveMember(member)">Remove</button>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="no-members">No members yet</p>
+                            }
+                        </div>
+                        @if (SelectedGroup.LeaderUserId == CurrentUserId)
+                        {
+                            <div class="add-member-section">
+                                <h4>Add Member</h4>
+                                <select @bind="SelectedUserIdToAdd">
+                                    <option value="0">-- Select User --</option>
+                                    @foreach (var user in AllUsers.Where(u => u.Id != CurrentUserId && !GroupMembers.Any(m => m.Id == u.Id)))
+                                    {
+                                        <option value="@user.Id">@(user.DisplayName ?? user.Username)</option>
+                                    }
+                                </select>
+                                <button class="add-member-btn" @onclick="AddMember" disabled="@(SelectedUserIdToAdd == 0)">Add</button>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    @if (IsCreatingGroup)
+                    {
+                        <button class="cancel-btn" @onclick="CloseGroupModal">Cancel</button>
+                        <button class="save-btn" @onclick="CreateGroup">Create</button>
+                    }
+                    else if (SelectedGroup != null && SelectedGroup.LeaderUserId == CurrentUserId)
+                    {
+                        <button class="delete-btn" @onclick="DeleteGroup">Delete Group</button>
+                        <button class="cancel-btn" @onclick="CloseGroupModal">Close</button>
+                    }
+                    else
+                    {
+                        <button class="cancel-btn" @onclick="CloseGroupModal">Close</button>
+                    }
+                </div>
             </div>
         </div>
     }
@@ -690,10 +1165,15 @@
     private List<DailyTask> WeeklyTasks { get; set; } = new();
     private List<DailyTask> OverdueTasks { get; set; } = new();
     private List<CalendarDay> CalendarDays { get; set; } = new();
+    private bool _isLoadingTasks = false; // Prevents concurrent DB calls
 
     // Computed lists for scheduled/all-day display
     private List<DailyTask> ScheduledTasks => Tasks.Where(t => !t.IsAllDay && t.ScheduledTime.HasValue).ToList();
     private List<DailyTask> AllDayTasks => Tasks.Where(t => t.IsAllDay || !t.ScheduledTime.HasValue).ToList();
+
+    // Task section tabs
+    private enum TaskSection { Scheduled, Tasks, Waiting }
+    private TaskSection ActiveTaskSection { get; set; } = TaskSection.Scheduled;
 
     private int? EditingTaskId { get; set; }
 
@@ -716,12 +1196,66 @@
     private string EditingTimeValue { get; set; } = "09:00";
     private int EditingDuration { get; set; } = 30;
 
+    // Reschedule modal
+    private DailyTask? ReschedulingTask { get; set; }
+    private DateTime RescheduleTargetDate { get; set; } = DateTime.Today.AddDays(1);
+    private bool KeepScheduledTime { get; set; } = true;
+    private string RescheduleTimePreset { get; set; } = "none";  // morning, afternoon, evening, custom, none
+    private string RescheduleCustomTime { get; set; } = "";
+
     // AI properties
     private bool ShowAiPanel { get; set; } = false;
     private bool IsAiLoading { get; set; } = false;
+
+    // Group properties
+    private List<TaskGroup> UserGroups { get; set; } = new();
+    private bool ShowGroupModal { get; set; } = false;
+    private bool IsCreatingGroup { get; set; } = false;
+    private TaskGroup? SelectedGroup { get; set; }
+    private List<User> GroupMembers { get; set; } = new();
+    private string NewGroupName { get; set; } = "";
+    private List<User> AllUsers { get; set; } = new();
+    private int SelectedUserIdToAdd { get; set; } = 0;
+
+    // Participants modal
+    private DailyTask? ParticipantsTask { get; set; }
+    private List<Participant> RecentParticipants { get; set; } = new();
+    private string NewParticipantName { get; set; } = "";
+    private string NewParticipantEmail { get; set; } = "";
+    private string NewParticipantPhone { get; set; } = "";
+    private string ParticipantsMessage { get; set; } = "";
+
+    // Share task modal
+    private DailyTask? ShareTask { get; set; }
+    private int SelectedShareGroupId { get; set; } = 0;
+    private string ShareMessage { get; set; } = "";
+
+    // Task Actions (Agentic AI)
+    private Dictionary<int, TaskAction?> TaskActions { get; set; } = new();
+    private bool IsOllamaAvailable { get; set; } = false;
     private string AiSummary { get; set; } = "";
     private List<string> AiSuggestions { get; set; } = new();
     private List<PrioritizedTask> PrioritizedTasks { get; set; } = new();
+    private List<ScheduleAdviceItem> ScheduleAdvice { get; set; } = new();
+    private List<TimeGap> TimeGaps { get; set; } = new();
+
+    // Schedule advice helper classes
+    private class ScheduleAdviceItem
+    {
+        public string Type { get; set; } = "info"; // warning, conflict, suggestion, info
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string? ActionLabel { get; set; }
+        public int? TaskId { get; set; }
+        public TimeSpan? SuggestedTime { get; set; }
+    }
+
+    private class TimeGap
+    {
+        public TimeSpan Start { get; set; }
+        public TimeSpan End { get; set; }
+        public int DurationMinutes => (int)(End - Start).TotalMinutes;
+    }
 
     // Settings & Auth
     private int CurrentUserId { get; set; } = 0;
@@ -752,15 +1286,6 @@
     // Credentials info
     private bool HasGoogleCredentials { get; set; } = false;
     private bool HasMicrosoftCredentials { get; set; } = false;
-    private List<TaskGroup> UserGroups { get; set; } = new();
-    private TaskGroup? ManagingGroup { get; set; }
-    private string NewGroupName { get; set; } = "";
-    private int SelectedUserIdToAdd { get; set; } = 0;
-    private List<User> AllUsers { get; set; } = new();
-    private List<User> GroupMembers { get; set; } = new();
-    private string GroupModalMessage { get; set; } = "";
-    private bool ShowCreateGroupModal { get; set; } = false;
-    private List<User> AvailableUsersToAdd => AllUsers.Where(u => u.Id != CurrentUserId).ToList();
 
     protected override void OnInitialized()
     {
@@ -825,8 +1350,20 @@
             // Load event counts for tabs
             await LoadExternalEventCounts();
 
+            // Load user groups
+            await LoadUserGroupsAsync();
+
+            // Check if Ollama is available for task actions
+            await CheckOllamaAvailability();
+
             await LoadTasksAsync();
-        await LoadGroupsAsync();
+
+            // Parse task actions in background if Ollama available
+            if (IsOllamaAvailable)
+            {
+                _ = ParseTaskActionsAsync();
+            }
+
             StateHasChanged();
         }
         catch (Exception)
@@ -931,31 +1468,40 @@
     private async Task LoadTasksAsync()
     {
         if (CurrentUserId == 0) return;
+        if (_isLoadingTasks) return; // Prevent concurrent calls
 
-        // Load overdue tasks (only for today's view)
-        if (SelectedDate.Date == DateTime.Today)
+        _isLoadingTasks = true;
+        try
         {
-            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
-        }
-        else
-        {
-            OverdueTasks.Clear();
-        }
+            // Load overdue tasks (only for today's view)
+            if (SelectedDate.Date == DateTime.Today)
+            {
+                OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
+            }
+            else
+            {
+                OverdueTasks.Clear();
+            }
 
-        if (IsDailyView)
-        {
-            Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
-            WeeklyTasks.Clear();
+            if (IsDailyView)
+            {
+                Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
+                WeeklyTasks.Clear();
+            }
+            else
+            {
+                var dayOfWeek = (int)SelectedDate.DayOfWeek;
+                var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+                var startOfWeek = SelectedDate.AddDays(-daysToMonday);
+                WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4), CurrentUserId);
+                Tasks.Clear();
+            }
+            StateHasChanged();
         }
-        else
+        finally
         {
-            var dayOfWeek = (int)SelectedDate.DayOfWeek;
-            var daysToMonday = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
-            var startOfWeek = SelectedDate.AddDays(-daysToMonday);
-            WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4), CurrentUserId);
-            Tasks.Clear();
+            _isLoadingTasks = false;
         }
-        StateHasChanged();
     }
 
     private void SelectDate(DateTime date)
@@ -984,7 +1530,6 @@
     {
         IsDailyView = daily;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
         await SaveSettingsAsync();
     }
 
@@ -1018,15 +1563,13 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
-        var (parsedDate, parsedTime, cleanTitle) = ParseTaskDateTime(NewTaskText);
         var task = new DailyTask
         {
-            Title = cleanTitle,
-            TaskDate = parsedDate,
+            Title = NewTaskText,
+            TaskDate = SelectedDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
-            IsAllDay = !parsedTime.HasValue && string.IsNullOrWhiteSpace(NewTaskTimeText),
-            ScheduledTime = parsedTime,
+            IsAllDay = string.IsNullOrWhiteSpace(NewTaskTimeText),
             UserId = CurrentUserId
         };
 
@@ -1041,56 +1584,48 @@
         NewTaskText = "";
         NewTaskTimeText = "";
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleWeeklyTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteWeeklyTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ToggleOverdueTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task DeleteOverdueTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task MoveToToday(DailyTask task)
     {
         await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, CurrentUserId);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private bool IsTaskInPast(DailyTask task)
@@ -1136,7 +1671,6 @@
             EditingTask.Title = EditingTaskText;
             await TaskService.UpdateTaskAsync(EditingTask);
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
         EditingTaskId = null;
         EditingTask = null;
@@ -1209,7 +1743,6 @@
         {
             SelectedDate = date;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
     }
 
@@ -1218,21 +1751,18 @@
     {
         SelectedDate = SelectedDate.AddDays(-1);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task NextDay()
     {
         SelectedDate = SelectedDate.AddDays(1);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task GoToToday()
     {
         SelectedDate = DateTime.Today;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     // Day roller drag handlers
@@ -1259,7 +1789,6 @@
             SelectedDate = SelectedDate.AddDays(dayChange);
             rollerOffset = 0;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
 
         StateHasChanged();
@@ -1297,7 +1826,6 @@
             SelectedDate = SelectedDate.AddDays(dayChange);
             rollerOffset = 0;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
 
         StateHasChanged();
@@ -1316,7 +1844,6 @@
         var dayChange = e.DeltaY > 0 ? 1 : -1;
         SelectedDate = SelectedDate.AddDays(dayChange);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task OnTimeRollerScroll()
@@ -1414,6 +1941,9 @@
                     }
                 }
             }
+
+            // Analyze schedule for advice
+            AnalyzeSchedule(todayTasks, overdueTasks);
         }
         catch (Exception ex)
         {
@@ -1441,6 +1971,153 @@
         >= 50 => "medium",
         _ => "low"
     };
+
+    // Schedule analysis methods
+    private void AnalyzeSchedule(List<DailyTask> todayTasks, List<DailyTask> overdueTasks)
+    {
+        ScheduleAdvice.Clear();
+        TimeGaps.Clear();
+
+        var scheduledTasks = todayTasks
+            .Where(t => t.ScheduledTime.HasValue && !t.IsCompleted)
+            .OrderBy(t => t.ScheduledTime)
+            .ToList();
+
+        var unscheduledTasks = todayTasks.Where(t => !t.ScheduledTime.HasValue && !t.IsCompleted).ToList();
+
+        // Check for overdue tasks
+        if (overdueTasks.Any())
+        {
+            ScheduleAdvice.Add(new ScheduleAdviceItem
+            {
+                Type = "warning",
+                Title = $"{overdueTasks.Count} Overdue Task{(overdueTasks.Count > 1 ? "s" : "")}",
+                Description = "You have tasks from previous days that need attention. Consider rescheduling or completing them today.",
+                ActionLabel = "View Waiting"
+            });
+        }
+
+        // Check for time conflicts
+        for (int i = 0; i < scheduledTasks.Count - 1; i++)
+        {
+            var current = scheduledTasks[i];
+            var next = scheduledTasks[i + 1];
+            var currentEnd = current.ScheduledTime!.Value.Add(TimeSpan.FromMinutes(current.DurationMinutes));
+
+            if (currentEnd > next.ScheduledTime!.Value)
+            {
+                ScheduleAdvice.Add(new ScheduleAdviceItem
+                {
+                    Type = "conflict",
+                    Title = "Time Conflict",
+                    Description = $"'{current.Title}' overlaps with '{next.Title}'. Consider adjusting times.",
+                    TaskId = next.Id,
+                    SuggestedTime = currentEnd.Add(TimeSpan.FromMinutes(5))
+                });
+            }
+        }
+
+        // Find time gaps for potential scheduling
+        var workStart = TimeSpan.FromHours(8);
+        var workEnd = TimeSpan.FromHours(18);
+        var currentTime = DateTime.Now.TimeOfDay;
+
+        if (SelectedDate.Date == DateTime.Today && currentTime > workStart)
+        {
+            workStart = TimeSpan.FromMinutes(Math.Ceiling(currentTime.TotalMinutes / 15) * 15); // Round up to next 15 min
+        }
+
+        var checkpoints = new List<TimeSpan> { workStart };
+        foreach (var task in scheduledTasks.Where(t => t.ScheduledTime >= workStart))
+        {
+            checkpoints.Add(task.ScheduledTime!.Value);
+            checkpoints.Add(task.ScheduledTime!.Value.Add(TimeSpan.FromMinutes(task.DurationMinutes)));
+        }
+        checkpoints.Add(workEnd);
+        checkpoints = checkpoints.Distinct().OrderBy(t => t).ToList();
+
+        for (int i = 0; i < checkpoints.Count - 1; i++)
+        {
+            var gapStart = checkpoints[i];
+            var gapEnd = checkpoints[i + 1];
+            var gapMinutes = (int)(gapEnd - gapStart).TotalMinutes;
+
+            // Is this gap free (no task starts here)?
+            var taskAtTime = scheduledTasks.FirstOrDefault(t =>
+                t.ScheduledTime >= gapStart && t.ScheduledTime < gapEnd);
+
+            if (taskAtTime == null && gapMinutes >= 30)
+            {
+                TimeGaps.Add(new TimeGap { Start = gapStart, End = gapEnd });
+            }
+        }
+
+        // Suggest scheduling unscheduled tasks
+        if (unscheduledTasks.Any() && TimeGaps.Any())
+        {
+            var largestGap = TimeGaps.OrderByDescending(g => g.DurationMinutes).First();
+            var taskToSchedule = unscheduledTasks.First();
+
+            ScheduleAdvice.Add(new ScheduleAdviceItem
+            {
+                Type = "suggestion",
+                Title = "Schedule a Task",
+                Description = $"'{taskToSchedule.Title}' could fit in the {FormatTime(largestGap.Start)} - {FormatTime(largestGap.End)} slot.",
+                ActionLabel = "Schedule Now",
+                TaskId = taskToSchedule.Id,
+                SuggestedTime = largestGap.Start
+            });
+        }
+
+        // Check for heavy workload
+        var totalScheduledMinutes = scheduledTasks.Sum(t => t.DurationMinutes);
+        if (totalScheduledMinutes > 6 * 60) // More than 6 hours scheduled
+        {
+            ScheduleAdvice.Add(new ScheduleAdviceItem
+            {
+                Type = "info",
+                Title = "Heavy Schedule",
+                Description = $"You have {totalScheduledMinutes / 60}h {totalScheduledMinutes % 60}m of meetings/tasks scheduled. Remember to take breaks!"
+            });
+        }
+
+        // Morning tip
+        if (SelectedDate.Date == DateTime.Today && DateTime.Now.Hour < 10 && scheduledTasks.Any())
+        {
+            var firstTask = scheduledTasks.First();
+            ScheduleAdvice.Add(new ScheduleAdviceItem
+            {
+                Type = "info",
+                Title = "Day Ahead",
+                Description = $"Your first scheduled item is '{firstTask.Title}' at {FormatTime(firstTask.ScheduledTime)}."
+            });
+        }
+    }
+
+    private string GetAdviceIcon(string type) => type switch
+    {
+        "warning" => "⚠️",
+        "conflict" => "🔴",
+        "suggestion" => "💡",
+        "info" => "ℹ️",
+        _ => "📋"
+    };
+
+    private async Task ApplyScheduleAdvice(ScheduleAdviceItem advice)
+    {
+        if (advice.ActionLabel == "View Waiting")
+        {
+            SetTaskSection(TaskSection.Waiting);
+            return;
+        }
+
+        if (advice.TaskId.HasValue && advice.SuggestedTime.HasValue)
+        {
+            await TaskService.ScheduleTaskTimeAsync(advice.TaskId.Value, advice.SuggestedTime.Value, CurrentUserId);
+            await LoadTasksAsync();
+            await RefreshAiInsights();
+        }
+    }
 
     // Time scheduling methods
     private string FormatTime(TimeSpan? time)
@@ -1480,14 +2157,126 @@
         await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
         EditingTimeTask = null;
         await LoadTasksAsync();
-        await LoadGroupsAsync();
     }
 
     private async Task ClearTaskTime(DailyTask task)
     {
         await TaskService.ScheduleTaskTimeAsync(task.Id, null, CurrentUserId, 30);
         await LoadTasksAsync();
-        await LoadGroupsAsync();
+    }
+
+    // Reschedule methods
+    private void OpenRescheduleModal(DailyTask task)
+    {
+        ReschedulingTask = task;
+        RescheduleTargetDate = DateTime.Today.AddDays(1);
+        KeepScheduledTime = task.ScheduledTime.HasValue;
+        RescheduleTimePreset = task.ScheduledTime.HasValue ? "none" : "none";
+        RescheduleCustomTime = "";
+    }
+
+    private void CloseRescheduleModal()
+    {
+        ReschedulingTask = null;
+    }
+
+    private void SetRescheduleTimePreset(string preset)
+    {
+        RescheduleTimePreset = preset;
+        if (preset != "custom")
+        {
+            RescheduleCustomTime = "";
+        }
+        KeepScheduledTime = false;  // User is choosing a new time
+    }
+
+    private TimeSpan? GetRescheduleTime()
+    {
+        return RescheduleTimePreset switch
+        {
+            "morning" => new TimeSpan(9, 0, 0),
+            "afternoon" => new TimeSpan(14, 0, 0),
+            "evening" => new TimeSpan(18, 0, 0),
+            "custom" => ParseCustomTime(RescheduleCustomTime),
+            "none" => KeepScheduledTime ? ReschedulingTask?.ScheduledTime : null,
+            _ => null
+        };
+    }
+
+    private TimeSpan? ParseCustomTime(string timeStr)
+    {
+        if (string.IsNullOrWhiteSpace(timeStr)) return null;
+
+        // Try parsing various formats
+        timeStr = timeStr.Trim().ToUpper();
+
+        // Handle "3:30 PM" or "3:30PM" format
+        if (timeStr.Contains("PM") || timeStr.Contains("AM"))
+        {
+            if (DateTime.TryParse(timeStr, out var parsed))
+            {
+                return parsed.TimeOfDay;
+            }
+        }
+
+        // Handle "15:30" or "9:00" format
+        if (TimeSpan.TryParse(timeStr.Replace("PM", "").Replace("AM", "").Trim(), out var ts))
+        {
+            return ts;
+        }
+
+        return null;
+    }
+
+    private async Task QuickReschedule(DateTime targetDate, TimeSpan? time)
+    {
+        if (ReschedulingTask == null) return;
+
+        await TaskService.RescheduleTaskAsync(ReschedulingTask.Id, targetDate, CurrentUserId);
+
+        if (time.HasValue)
+        {
+            await TaskService.ScheduleTaskTimeAsync(ReschedulingTask.Id, time, CurrentUserId, ReschedulingTask.DurationMinutes > 0 ? ReschedulingTask.DurationMinutes : 30);
+        }
+        else if (!KeepScheduledTime && ReschedulingTask.ScheduledTime.HasValue)
+        {
+            await TaskService.ScheduleTaskTimeAsync(ReschedulingTask.Id, null, CurrentUserId, 30);
+        }
+
+        ReschedulingTask = null;
+        await LoadTasksAsync();
+    }
+
+    private async Task RescheduleToDate(DateTime targetDate)
+    {
+        if (ReschedulingTask == null) return;
+
+        await TaskService.RescheduleTaskAsync(ReschedulingTask.Id, targetDate, CurrentUserId);
+
+        var newTime = GetRescheduleTime();
+        if (newTime.HasValue)
+        {
+            await TaskService.ScheduleTaskTimeAsync(ReschedulingTask.Id, newTime, CurrentUserId, ReschedulingTask.DurationMinutes > 0 ? ReschedulingTask.DurationMinutes : 30);
+        }
+        else if (!KeepScheduledTime && ReschedulingTask.ScheduledTime.HasValue)
+        {
+            await TaskService.ScheduleTaskTimeAsync(ReschedulingTask.Id, null, CurrentUserId, 30);
+        }
+
+        ReschedulingTask = null;
+        await LoadTasksAsync();
+    }
+
+    private async Task ConfirmReschedule()
+    {
+        await RescheduleToDate(RescheduleTargetDate);
+    }
+
+    private DateTime GetNextWeekday(DateTime start, DayOfWeek day)
+    {
+        int daysToAdd = ((int)day - (int)start.DayOfWeek + 7) % 7;
+        if (daysToAdd == 0) daysToAdd = 7; // If today is that day, get next week
+        return start.AddDays(daysToAdd);
     }
 
     private class CalendarDay
@@ -1548,7 +2337,6 @@
                 : "No new events to import.";
 
             await LoadTasksAsync();
-        await LoadGroupsAsync();
         }
         catch (Exception ex)
         {
@@ -1608,6 +2396,13 @@
             ActiveCalendarTab = CalendarSource.Integrated;
         }
         ImportMessage = "";
+        StateHasChanged();
+    }
+
+    // Task Section Tab methods
+    private void SetTaskSection(TaskSection section)
+    {
+        ActiveTaskSection = section;
         StateHasChanged();
     }
 
@@ -1683,7 +2478,6 @@
             await CalendarSyncService.ImportEventToIntegratedAsync(CurrentUserId, evt);
             evt.IsImported = true;
             await LoadTasksAsync();
-        await LoadGroupsAsync();
             ImportMessage = $"Added '{evt.Title}' to Integrated";
             StateHasChanged();
         }
@@ -1706,7 +2500,6 @@
             var count = await CalendarSyncService.ImportEventsToIntegratedAsync(CurrentUserId, toImport);
             ImportMessage = $"Imported {count} event(s) to Integrated!";
             await LoadTasksAsync();
-        await LoadGroupsAsync();
             await LoadExternalEventsForTab(ActiveCalendarTab);
         }
         catch (Exception ex)
@@ -1745,24 +2538,558 @@
             .ToList();
     }
 
-    private async Task LoadGroupsAsync() { if (CurrentUserId == 0) return; try { UserGroups = await GroupService.GetGroupsForUserAsync(CurrentUserId); } catch { UserGroups = new(); } }
-    private void ShowCreateGroupDialog() { ShowCreateGroupModal = true; ManagingGroup = null; NewGroupName = ""; }
-    private void CloseGroupModal() { ManagingGroup = null; NewGroupName = ""; GroupModalMessage = ""; ShowCreateGroupModal = false; }
-    private async Task CreateGroup() { if (string.IsNullOrWhiteSpace(NewGroupName) || CurrentUserId == 0) return; await GroupService.CreateGroupAsync(NewGroupName.Trim(), CurrentUserId); await LoadGroupsAsync(); CloseGroupModal(); }
-    private async Task OpenGroupManager(TaskGroup group) { ManagingGroup = group; GroupMembers = await GroupService.GetGroupMembersAsync(group.Id); AllUsers = await GroupService.GetAllUsersAsync(); SelectedUserIdToAdd = 0; GroupModalMessage = ""; ShowCreateGroupModal = false; }
-    private async Task AddMember() { if (SelectedUserIdToAdd == 0 || ManagingGroup == null) return; var user = AllUsers.FirstOrDefault(u => u.Id == SelectedUserIdToAdd); if (user == null) return; var ok = await GroupService.AddMemberByUsernameAsync(ManagingGroup.Id, user.Username, CurrentUserId); if (ok) { SelectedUserIdToAdd = 0; GroupMembers = await GroupService.GetGroupMembersAsync(ManagingGroup.Id); GroupModalMessage = "Added!"; } else { GroupModalMessage = "Failed"; } }
-    private async Task RemoveMember(User m) { if (ManagingGroup == null) return; await GroupService.RemoveMemberAsync(ManagingGroup.Id, m.Id, CurrentUserId); GroupMembers = await GroupService.GetGroupMembersAsync(ManagingGroup.Id); }
-    private async Task DeleteGroup() { if (ManagingGroup == null) return; await GroupService.DeleteGroupAsync(ManagingGroup.Id, CurrentUserId); await LoadGroupsAsync(); CloseGroupModal(); }
-
-    private (DateTime date, TimeSpan? time, string title) ParseTaskDateTime(string input) {
-        var date = SelectedDate; TimeSpan? time = null; var title = input; var lower = input.ToLower();
-        if (lower.Contains("tomorrow")) { date = DateTime.Today.AddDays(1); title = System.Text.RegularExpressions.Regex.Replace(title, @"\btomorrow\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); }
-        else { var days = new[] { ("monday", DayOfWeek.Monday), ("tuesday", DayOfWeek.Tuesday), ("wednesday", DayOfWeek.Wednesday), ("thursday", DayOfWeek.Thursday), ("friday", DayOfWeek.Friday), ("saturday", DayOfWeek.Saturday), ("sunday", DayOfWeek.Sunday) };
-            foreach (var (n, d) in days) { if (lower.Contains(n)) { date = GetNextWeekday(d); title = System.Text.RegularExpressions.Regex.Replace(title, $@"\b{n}\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); break; } } }
-        var m = System.Text.RegularExpressions.Regex.Match(lower, @"(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (m.Success) { int h = int.Parse(m.Groups[1].Value); int mi = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0; var ap = m.Groups[3].Value.ToLower(); if (ap == "pm" && h < 12) h += 12; if (ap == "am" && h == 12) h = 0; time = new TimeSpan(h, mi, 0); title = System.Text.RegularExpressions.Regex.Replace(title, @"(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase); }
-        title = System.Text.RegularExpressions.Regex.Replace(title, @"\s+on\s*$|\s+at\s*$", "").Trim(); title = System.Text.RegularExpressions.Regex.Replace(title, @"\s+", " ").Trim();
-        return (date, time, title);
+    // Group management methods
+    private async Task LoadUserGroupsAsync()
+    {
+        if (CurrentUserId == 0) return;
+        UserGroups = await GroupService.GetGroupsForUserAsync(CurrentUserId);
     }
-    private DateTime GetNextWeekday(DayOfWeek day) { var t = DateTime.Today; int d = ((int)day - (int)t.DayOfWeek + 7) % 7; if (d == 0) d = 7; return t.AddDays(d); }
+
+    private async Task OpenGroupModal(TaskGroup group)
+    {
+        SelectedGroup = group;
+        IsCreatingGroup = false;
+        ShowGroupModal = true;
+        GroupMembers = await GroupService.GetGroupMembersAsync(group.Id);
+        AllUsers = await GroupService.GetAllUsersAsync();
+        StateHasChanged();
+    }
+
+    private async Task OpenCreateGroupModalAsync()
+    {
+        SelectedGroup = null;
+        IsCreatingGroup = true;
+        NewGroupName = "";
+        AllUsers = await GroupService.GetAllUsersAsync();
+        ShowGroupModal = true;
+    }
+
+    private void OpenCreateGroupModal()
+    {
+        _ = OpenCreateGroupModalAsync();
+    }
+
+    private void CloseGroupModal()
+    {
+        ShowGroupModal = false;
+        SelectedGroup = null;
+        IsCreatingGroup = false;
+        GroupMembers.Clear();
+        SelectedUserIdToAdd = 0;
+    }
+
+    private async Task CreateGroup()
+    {
+        if (string.IsNullOrWhiteSpace(NewGroupName) || CurrentUserId == 0) return;
+
+        await GroupService.CreateGroupAsync(NewGroupName, CurrentUserId);
+        await LoadUserGroupsAsync();
+        CloseGroupModal();
+    }
+
+    private async Task DeleteGroup()
+    {
+        if (SelectedGroup == null || CurrentUserId == 0) return;
+
+        await GroupService.DeleteGroupAsync(SelectedGroup.Id, CurrentUserId);
+        await LoadUserGroupsAsync();
+        CloseGroupModal();
+    }
+
+    private async Task AddMember()
+    {
+        if (SelectedGroup == null || SelectedUserIdToAdd == 0) return;
+
+        // Get the username for the selected user
+        var userToAdd = AllUsers.FirstOrDefault(u => u.Id == SelectedUserIdToAdd);
+        if (userToAdd != null)
+        {
+            await GroupService.AddMemberByUsernameAsync(SelectedGroup.Id, userToAdd.Username, CurrentUserId);
+            GroupMembers = await GroupService.GetGroupMembersAsync(SelectedGroup.Id);
+        }
+        SelectedUserIdToAdd = 0;
+        StateHasChanged();
+    }
+
+    private async Task RemoveMember(User member)
+    {
+        if (SelectedGroup == null) return;
+
+        await GroupService.RemoveMemberAsync(SelectedGroup.Id, member.Id, CurrentUserId);
+        GroupMembers = await GroupService.GetGroupMembersAsync(SelectedGroup.Id);
+        StateHasChanged();
+    }
+
+    // Participants management methods
+    private async Task OpenParticipantsModal(DailyTask task)
+    {
+        ParticipantsTask = task;
+        NewParticipantName = "";
+        NewParticipantEmail = "";
+        ParticipantsMessage = "";
+        RecentParticipants = await TaskService.GetRecentParticipantsAsync(10);
+        StateHasChanged();
+    }
+
+    private void CloseParticipantsModal()
+    {
+        ParticipantsTask = null;
+        ParticipantsMessage = "";
+    }
+
+    private async Task AddNewParticipant()
+    {
+        if (ParticipantsTask == null || string.IsNullOrWhiteSpace(NewParticipantName)) return;
+
+        try
+        {
+            var participant = await TaskService.CreateParticipantAsync(NewParticipantName, NewParticipantEmail, NewParticipantPhone);
+            await TaskService.AddParticipantToTaskAsync(ParticipantsTask.Id, participant.Id, CurrentUserId);
+
+            // Reload the task to get updated participants
+            var updatedTask = await TaskService.GetTaskByIdAsync(ParticipantsTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                ParticipantsTask = updatedTask;
+            }
+
+            NewParticipantName = "";
+            NewParticipantEmail = "";
+            NewParticipantPhone = "";
+            ParticipantsMessage = $"Added {participant.Name}";
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private async Task AddExistingParticipant(Participant participant)
+    {
+        if (ParticipantsTask == null) return;
+
+        try
+        {
+            await TaskService.AddParticipantToTaskAsync(ParticipantsTask.Id, participant.Id, CurrentUserId);
+
+            var updatedTask = await TaskService.GetTaskByIdAsync(ParticipantsTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                ParticipantsTask = updatedTask;
+            }
+
+            ParticipantsMessage = $"Added {participant.Name}";
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private async Task RemoveParticipantFromTask(Participant participant)
+    {
+        if (ParticipantsTask == null) return;
+
+        try
+        {
+            await TaskService.RemoveParticipantFromTaskAsync(ParticipantsTask.Id, participant.Id, CurrentUserId);
+
+            var updatedTask = await TaskService.GetTaskByIdAsync(ParticipantsTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                ParticipantsTask = updatedTask;
+            }
+
+            ParticipantsMessage = $"Removed {participant.Name}";
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        return name.Length >= 2 ? name[..2].ToUpper() : name.ToUpper();
+    }
+
+    // Meeting/Invitee methods
+    private bool IsMeetingTask(DailyTask task)
+    {
+        var title = task.Title.ToLowerInvariant();
+        return title.Contains("meeting") || title.Contains("call") || title.Contains("sync") ||
+               title.Contains("standup") || title.Contains("review") || title.Contains("interview") ||
+               title.Contains("1:1") || title.Contains("1-1") || title.Contains("catch up") ||
+               task.Participants.Any();
+    }
+
+    private async Task SendEmailInvite(Participant invitee)
+    {
+        if (ParticipantsTask == null || string.IsNullOrEmpty(invitee.Email)) return;
+
+        var subject = Uri.EscapeDataString($"Meeting Invite: {ParticipantsTask.Title}");
+        var body = BuildMeetingEmailBody(invitee);
+        var mailtoUrl = $"mailto:{invitee.Email}?subject={subject}&body={body}";
+
+        await JSRuntime.InvokeVoidAsync("open", mailtoUrl, "_blank");
+        ParticipantsMessage = $"Email opened for {invitee.Name}";
+        StateHasChanged();
+    }
+
+    private async Task SendAllEmailInvites()
+    {
+        if (ParticipantsTask == null) return;
+
+        var inviteesWithEmail = ParticipantsTask.Participants
+            .Where(p => !string.IsNullOrEmpty(p.Participant.Email))
+            .Select(p => p.Participant.Email)
+            .ToList();
+
+        if (!inviteesWithEmail.Any()) return;
+
+        var subject = Uri.EscapeDataString($"Meeting Invite: {ParticipantsTask.Title}");
+        var body = BuildMeetingEmailBody(null);
+        var emails = string.Join(",", inviteesWithEmail);
+        var mailtoUrl = $"mailto:{emails}?subject={subject}&body={body}";
+
+        await JSRuntime.InvokeVoidAsync("open", mailtoUrl, "_blank");
+        ParticipantsMessage = $"Email opened for {inviteesWithEmail.Count} invitee(s)";
+        StateHasChanged();
+    }
+
+    private string BuildMeetingEmailBody(Participant? specificInvitee)
+    {
+        if (ParticipantsTask == null) return "";
+
+        var greeting = specificInvitee != null ? $"Hi {specificInvitee.Name.Split(' ')[0]}," : "Hi,";
+        var dateTime = ParticipantsTask.ScheduledTime.HasValue
+            ? $"{ParticipantsTask.TaskDate:dddd, MMMM d, yyyy} at {FormatTime(ParticipantsTask.ScheduledTime)}"
+            : $"{ParticipantsTask.TaskDate:dddd, MMMM d, yyyy}";
+
+        var duration = ParticipantsTask.DurationMinutes > 0 ? $"\nDuration: {ParticipantsTask.DurationMinutes} minutes" : "";
+
+        var body = $@"{greeting}
+
+You are invited to: {ParticipantsTask.Title}
+
+Date/Time: {dateTime}{duration}
+
+Please let me know if this works for you.
+
+Best regards";
+
+        return Uri.EscapeDataString(body);
+    }
+
+    private async Task CallInvitee(Participant invitee)
+    {
+        if (string.IsNullOrEmpty(invitee.Phone)) return;
+
+        var telUrl = $"tel:{invitee.Phone.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "")}";
+        await JSRuntime.InvokeVoidAsync("open", telUrl, "_self");
+        ParticipantsMessage = $"Calling {invitee.Name}...";
+        StateHasChanged();
+    }
+
+    private async Task AddMeetingToMemberCalendar(User member)
+    {
+        if (ParticipantsTask == null || !ParticipantsTask.GroupId.HasValue) return;
+
+        try
+        {
+            // Create a copy of the task for the group member
+            var meetingCopy = new DailyTask
+            {
+                Title = ParticipantsTask.Title,
+                TaskDate = ParticipantsTask.TaskDate,
+                ScheduledTime = ParticipantsTask.ScheduledTime,
+                DurationMinutes = ParticipantsTask.DurationMinutes,
+                IsAllDay = ParticipantsTask.IsAllDay,
+                UserId = member.Id,
+                GroupId = ParticipantsTask.GroupId,
+                Description = $"Meeting shared by {CurrentUsername}"
+            };
+
+            await TaskService.CreateTaskAsync(meetingCopy);
+            ParticipantsMessage = $"Meeting added to {member.Username}'s calendar";
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    // Share task methods
+    private void OpenShareModal(DailyTask task)
+    {
+        ShareTask = task;
+        SelectedShareGroupId = 0;
+        ShareMessage = "";
+        StateHasChanged();
+    }
+
+    private void CloseShareModal()
+    {
+        ShareTask = null;
+        SelectedShareGroupId = 0;
+        ShareMessage = "";
+    }
+
+    private void SelectShareGroup(int groupId)
+    {
+        SelectedShareGroupId = groupId;
+        ShareMessage = "";
+        StateHasChanged();
+    }
+
+    private async Task ConfirmShareTask()
+    {
+        if (ShareTask == null || SelectedShareGroupId == 0) return;
+
+        try
+        {
+            await GroupService.ShareTaskToGroupAsync(ShareTask.Id, SelectedShareGroupId, CurrentUserId);
+            var groupName = UserGroups.FirstOrDefault(g => g.Id == SelectedShareGroupId)?.Name ?? "group";
+            ShareMessage = $"Shared with {groupName}!";
+            await LoadTasksAsync();
+            StateHasChanged();
+            await Task.Delay(1000);
+            CloseShareModal();
+        }
+        catch (Exception ex)
+        {
+            ShareMessage = $"Error: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task UnshareTask(DailyTask task)
+    {
+        try
+        {
+            await GroupService.UnshareTaskAsync(task.Id, CurrentUserId);
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error unsharing task: {ex.Message}");
+        }
+    }
+
+    // Task Action (Agentic AI) methods
+    private async Task CheckOllamaAvailability()
+    {
+        try
+        {
+            IsOllamaAvailable = await OllamaService.IsAvailableAsync();
+        }
+        catch
+        {
+            IsOllamaAvailable = false;
+        }
+    }
+
+    private async Task ParseTaskActionsAsync()
+    {
+        if (!IsOllamaAvailable) return;
+
+        var allTasks = Tasks.Concat(OverdueTasks).ToList();
+        foreach (var task in allTasks)
+        {
+            if (!TaskActions.ContainsKey(task.Id))
+            {
+                try
+                {
+                    var action = await OllamaService.ParseTaskActionAsync(task.Title);
+                    TaskActions[task.Id] = action;
+                }
+                catch
+                {
+                    TaskActions[task.Id] = null;
+                }
+            }
+        }
+        StateHasChanged();
+    }
+
+    private TaskAction? GetTaskAction(DailyTask task)
+    {
+        if (TaskActions.TryGetValue(task.Id, out var action))
+        {
+            return action;
+        }
+        // Queue parsing in background if not cached
+        if (IsOllamaAvailable)
+        {
+            _ = ParseSingleTaskActionAsync(task);
+        }
+        return null;
+    }
+
+    private async Task ParseSingleTaskActionAsync(DailyTask task)
+    {
+        if (TaskActions.ContainsKey(task.Id)) return;
+
+        try
+        {
+            var action = await OllamaService.ParseTaskActionAsync(task.Title);
+            TaskActions[task.Id] = action;
+            StateHasChanged();
+        }
+        catch
+        {
+            TaskActions[task.Id] = null;
+        }
+    }
+
+    private string GetActionTooltip(TaskAction action)
+    {
+        return action.ActionType switch
+        {
+            TaskActionType.Email => action.Target != null
+                ? $"Send email to {action.Target}"
+                : "Compose email",
+            TaskActionType.Call => action.Target != null
+                ? $"Call {action.Target}"
+                : "Make a call",
+            TaskActionType.Document => action.Subject != null
+                ? $"Open: {action.Subject}"
+                : "Open document",
+            TaskActionType.Website => action.Target != null
+                ? $"Visit {action.Target}"
+                : "Open website",
+            TaskActionType.Meeting => action.Subject != null
+                ? $"Schedule: {action.Subject}"
+                : "Schedule meeting",
+            _ => "Action"
+        };
+    }
+
+    private async Task ExecuteTaskAction(DailyTask task, TaskAction action)
+    {
+        try
+        {
+            switch (action.ActionType)
+            {
+                case TaskActionType.Email:
+                    await ExecuteEmailAction(task, action);
+                    break;
+                case TaskActionType.Call:
+                    await ExecuteCallAction(task, action);
+                    break;
+                case TaskActionType.Document:
+                    await ExecuteDocumentAction(task, action);
+                    break;
+                case TaskActionType.Website:
+                    await ExecuteWebsiteAction(task, action);
+                    break;
+                case TaskActionType.Meeting:
+                    await ExecuteMeetingAction(task, action);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ImportMessage = $"Action failed: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExecuteEmailAction(DailyTask task, TaskAction action)
+    {
+        var mailto = "mailto:";
+        if (!string.IsNullOrEmpty(action.Target))
+        {
+            mailto += action.Target;
+        }
+
+        var queryParams = new List<string>();
+        if (!string.IsNullOrEmpty(action.Subject))
+        {
+            queryParams.Add($"subject={Uri.EscapeDataString(action.Subject)}");
+        }
+        else
+        {
+            queryParams.Add($"subject={Uri.EscapeDataString(task.Title)}");
+        }
+
+        if (!string.IsNullOrEmpty(action.Body))
+        {
+            queryParams.Add($"body={Uri.EscapeDataString(action.Body)}");
+        }
+
+        if (queryParams.Any())
+        {
+            mailto += "?" + string.Join("&", queryParams);
+        }
+
+        await JSRuntime.InvokeVoidAsync("open", mailto);
+    }
+
+    private async Task ExecuteCallAction(DailyTask task, TaskAction action)
+    {
+        if (!string.IsNullOrEmpty(action.Target))
+        {
+            // Try to format as a tel: link
+            var phoneNumber = action.Target.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "");
+            await JSRuntime.InvokeVoidAsync("open", $"tel:{phoneNumber}");
+        }
+        else if (!string.IsNullOrEmpty(action.SearchQuery))
+        {
+            // Search for the contact
+            await JSRuntime.InvokeVoidAsync("open", $"https://www.google.com/search?q={Uri.EscapeDataString(action.SearchQuery + " phone number")}");
+        }
+        else
+        {
+            ImportMessage = "No phone number found. Add contact details to task.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExecuteDocumentAction(DailyTask task, TaskAction action)
+    {
+        // For documents, we search or open a new doc
+        var searchTerm = action.Subject ?? action.SearchQuery ?? task.Title;
+        // Open Google Docs search or create new doc
+        await JSRuntime.InvokeVoidAsync("open", $"https://docs.google.com/document/create?title={Uri.EscapeDataString(searchTerm)}");
+    }
+
+    private async Task ExecuteWebsiteAction(DailyTask task, TaskAction action)
+    {
+        var url = action.Target;
+        if (string.IsNullOrEmpty(url))
+        {
+            // Search for it
+            var searchTerm = action.SearchQuery ?? task.Title;
+            url = $"https://www.google.com/search?q={Uri.EscapeDataString(searchTerm)}";
+        }
+        else if (!url.StartsWith("http"))
+        {
+            url = "https://" + url;
+        }
+
+        await JSRuntime.InvokeVoidAsync("open", url);
+    }
+
+    private async Task ExecuteMeetingAction(DailyTask task, TaskAction action)
+    {
+        // Open calendar to create event
+        var title = action.Subject ?? task.Title;
+        var details = action.Body ?? "";
+
+        // Google Calendar quick add
+        var calendarUrl = $"https://calendar.google.com/calendar/render?action=TEMPLATE&text={Uri.EscapeDataString(title)}&details={Uri.EscapeDataString(details)}";
+        await JSRuntime.InvokeVoidAsync("open", calendarUrl);
+    }
 }

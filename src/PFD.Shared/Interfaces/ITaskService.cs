@@ -16,4 +16,12 @@ public interface ITaskService
     Task ScheduleTaskTimeAsync(int taskId, TimeSpan? time, int userId, int durationMinutes = 30);
     Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30);
     Task<List<DailyTask>> GetUpcomingTasksAsync(int userId, int days = 14);
+
+    // Participant management
+    Task<List<Participant>> GetAllParticipantsAsync();
+    Task<List<Participant>> GetRecentParticipantsAsync(int limit = 10);
+    Task<Participant> CreateParticipantAsync(string name, string? email = null, string? phone = null);
+    Task AddParticipantToTaskAsync(int taskId, int participantId, int userId);
+    Task RemoveParticipantFromTaskAsync(int taskId, int participantId, int userId);
+    Task<List<Participant>> GetTaskParticipantsAsync(int taskId);
 }

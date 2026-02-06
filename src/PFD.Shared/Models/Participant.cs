@@ -16,6 +16,9 @@ public class Participant
     [MaxLength(200)]
     public string? Email { get; set; }
 
+    [MaxLength(50)]
+    public string? Phone { get; set; }
+
     /// <summary>
     /// Number of meetings this participant has attended (for frequency-based suggestions)
     /// </summary>

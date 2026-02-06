@@ -85,4 +85,35 @@ public class TaskService : ITaskService
     {
         return await _taskRepository.GetUpcomingTasksAsync(userId, days);
     }
+
+    // Participant management
+    public async Task<List<Participant>> GetAllParticipantsAsync()
+    {
+        return await _taskRepository.GetAllParticipantsAsync();
+    }
+
+    public async Task<List<Participant>> GetRecentParticipantsAsync(int limit = 10)
+    {
+        return await _taskRepository.GetRecentParticipantsAsync(limit);
+    }
+
+    public async Task<Participant> CreateParticipantAsync(string name, string? email = null, string? phone = null)
+    {
+        return await _taskRepository.CreateParticipantAsync(name, email, phone);
+    }
+
+    public async Task AddParticipantToTaskAsync(int taskId, int participantId, int userId)
+    {
+        await _taskRepository.AddParticipantToTaskAsync(taskId, participantId, userId);
+    }
+
+    public async Task RemoveParticipantFromTaskAsync(int taskId, int participantId, int userId)
+    {
+        await _taskRepository.RemoveParticipantFromTaskAsync(taskId, participantId, userId);
+    }
+
+    public async Task<List<Participant>> GetTaskParticipantsAsync(int taskId)
+    {
+        return await _taskRepository.GetTaskParticipantsAsync(taskId);
+    }
 }
