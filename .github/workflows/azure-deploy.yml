@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: pfd-planner    # Change this to your Azure Web App name
-  DOTNET_VERSION: '9.0.x'
+  AZURE_WEBAPP_NAME: PFDBlazor20260128085603
+  DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: 'src/PFD.Blazor/PFD.Blazor.csproj'
 
 jobs:
