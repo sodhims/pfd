@@ -62,3 +62,26 @@ window.settingsInterop = {
         localStorage.setItem('pfd_high_contrast', highContrast.toString());
     }
 };
+
+// Global ESC key handler for deselecting/closing modals
+window.registerEscHandler = function (dotNetRef) {
+    // Remove any existing handler
+    if (window.pfdEscHandler) {
+        document.removeEventListener('keydown', window.pfdEscHandler);
+    }
+
+    window.pfdDotNetRef = dotNetRef;
+    window.pfdEscHandler = function (e) {
+        if (e.key === 'Escape') {
+            // Don't intercept if user is typing in an input
+            if (e.target.matches('input, textarea, select')) {
+                return;
+            }
+            e.preventDefault();
+            if (window.pfdDotNetRef) {
+                window.pfdDotNetRef.invokeMethodAsync('HandleEscapeKeyJS');
+            }
+        }
+    };
+    document.addEventListener('keydown', window.pfdEscHandler);
+};

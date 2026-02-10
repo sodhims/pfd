@@ -1,6 +1,7 @@
 @page "/planner"
 @using PFD.Shared.Interfaces
 @using PFD.Shared.Models
+@using PFD.Shared.Enums
 @using PFD.Services
 @using Microsoft.Extensions.DependencyInjection
 @inject ITaskService TaskService
@@ -14,11 +15,17 @@
 @inject IOllamaService OllamaService
 @inject INotificationService NotificationService
 @inject IInsightHistoryService InsightHistoryService
+@inject ITaskTemplateService TaskTemplateService
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
 
-<div class="planner-container theme-@CurrentTheme @(UseLargeText ? "large-text" : "") @(HighContrastMode ? "high-contrast" : "")">
+<div class="planner-container theme-@CurrentTheme @(UseLargeText ? "large-text" : "") @(HighContrastMode ? "high-contrast" : "") @(IsResizingPanels ? "resizing" : "")"
+     @onmousemove="OnPanelResize"
+     @onmouseup="StopPanelResize"
+     @onmouseleave="StopPanelResize"
+     @onkeydown="HandleGlobalKeyDown"
+     tabindex="0">
     <!-- Left Panel: Calendar + Settings -->
     <div class="left-panel">
         <!-- Calendar -->
@@ -34,9 +41,13 @@
             <div class="calendar-days">
                 @foreach (var day in CalendarDays)
                 {
-                    <button class="calendar-day @(day.IsCurrentMonth ? "" : "other-month") @(day.Date.Date == SelectedDate.Date ? "selected" : "") @(day.Date.Date == DateTime.Today ? "today" : "")"
+                    <button class="calendar-day @(day.IsCurrentMonth ? "" : "other-month") @(day.Date.Date == SelectedDate.Date ? "selected" : "") @(day.Date.Date == LocalToday ? "today" : "") @(day.TaskCount > 0 ? "has-tasks" : "")"
                             @onclick="() => SelectDate(day.Date)">
-                        @day.Date.Day
+                        <span class="day-number">@day.Date.Day</span>
+                        @if (day.TaskCount > 0)
+                        {
+                            <span class="task-count-badge">@day.TaskCount</span>
+                        }
                     </button>
                 }
             </div>
@@ -268,12 +279,37 @@
         </div>
 
         <!-- Add Task -->
-        <div class="add-task">
+        <div class="add-task @(SelectedDate.Date < LocalToday ? "past-date" : "")">
             <input type="text" @bind="NewTaskText" @bind:event="oninput"
-                   @onkeydown="HandleKeyDown" placeholder="Enter a new task..." />
+                   @onkeydown="HandleKeyDown" placeholder="@(SelectedDate.Date < LocalToday ? "Viewing past date - tasks will be added to today" : "Enter a new task...")" />
             <input type="text" @bind="NewTaskTimeText" @bind:event="oninput" class="time-input"
                    placeholder="9:00" pattern="[0-9]{1,2}:[0-9]{2}" title="Time (e.g. 9:00, 14:30)" />
             <button @onclick="AddTask">Add</button>
+            <div class="template-dropdown">
+                <button class="template-btn" @onclick="ToggleTemplateDropdown" title="Use template">&#128203;</button>
+                @if (ShowTemplateDropdown)
+                {
+                    <div class="template-menu">
+                        @if (TaskTemplates.Any())
+                        {
+                            @foreach (var template in TaskTemplates)
+                            {
+                                <div class="template-item" @onclick="() => CreateFromTemplate(template)">
+                                    <span class="template-name">@template.Name</span>
+                                    @if (template.SubtaskTemplates.Any())
+                                    {
+                                        <span class="template-subtask-count">@template.SubtaskTemplates.Count subtasks</span>
+                                    }
+                                </div>
+                            }
+                            <div class="template-divider"></div>
+                        }
+                        <div class="template-item manage" @onclick="OpenTemplateManager">
+                            <span>&#9881; Manage Templates</span>
+                        </div>
+                    </div>
+                }
+            </div>
         </div>
 
         <!-- Calendar Tabs - Always show -->
@@ -431,9 +467,9 @@
                     <button class="section-tab @(ActiveTaskSection == TaskSection.Tasks ? "active" : "")"
                             @onclick="() => SetTaskSection(TaskSection.Tasks)">
                         <span class="tab-icon">&#128203;</span> Tasks
-                        @if (AllDayTasks.Any())
+                        @if (AllUnscheduledTasks.Any())
                         {
-                            <span class="tab-count">@AllDayTasks.Count</span>
+                            <span class="tab-count">@AllUnscheduledTasks.Count</span>
                         }
                     </button>
                     <button class="section-tab @(ActiveTaskSection == TaskSection.Waiting ? "active" : "")"
@@ -467,6 +503,7 @@
                                     <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
                                           @ondblclick="() => StartEditTask(task)">@task.Title</span>
                                 }
+                                <span class="task-schedule-zone" title="Double-click to edit schedule" @ondblclick="() => OpenTimeEditor(task)"></span>
                                 @if (task.Participants.Any())
                                 {
                                     <div class="task-participants">
@@ -527,6 +564,18 @@
                                     <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
                                 }
                             </div>
+                            @if (task.Subtasks != null && task.Subtasks.Any())
+                            {
+                                @foreach (var subtask in task.Subtasks.OrderBy(s => s.SortOrder).ThenBy(s => s.CreatedAt))
+                                {
+                                    <div class="subtask-row @(subtask.IsCompleted ? "completed" : "")">
+                                        <span class="subtask-indent"></span>
+                                        <input type="checkbox" checked="@subtask.IsCompleted" @onchange="() => ToggleTask(subtask)" />
+                                        <span class="subtask-title @(subtask.IsCompleted ? "strikethrough" : "")">@subtask.Title</span>
+                                        <button class="delete-btn small" @onclick="() => DeleteTask(subtask)">&#128465;</button>
+                                    </div>
+                                }
+                            }
                         }
                     </div>
                 }
@@ -534,12 +583,22 @@
                 @if (ActiveTaskSection == TaskSection.Tasks)
                 {
                     <div class="allday-section">
-                        @if (AllDayTasks.Any())
+                        @if (AllUnscheduledTasks.Any())
                         {
-                            @foreach (var task in AllDayTasks)
+                            @foreach (var task in AllUnscheduledTasks)
                             {
                                 var isPast = IsTaskInPast(task);
-                                <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
+                                <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "") @(DraggingTaskId == task.Id ? "dragging" : "") @(!isPast && !task.IsCompleted ? "draggable-task" : "")"
+                                     draggable="@((!isPast && !task.IsCompleted) ? "true" : "false")"
+                                     @ondragstart="() => OnDragStart(task)"
+                                     @ondragend="OnDragEnd"
+                                     @ondblclick="() => OpenTimeEditor(task)"
+                                     @ondblclick:stopPropagation="true"
+                                     data-task-id="@task.Id">
+                                    @if (!isPast && !task.IsCompleted)
+                                    {
+                                        <span class="drag-handle" title="Drag to schedule">&#9776;</span>
+                                    }
                                     <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
                                     @if (EditingTaskId == task.Id)
                                     {
@@ -549,7 +608,8 @@
                                     else
                                     {
                                         <span class="task-title @(task.IsCompleted ? "strikethrough" : "")"
-                                              @ondblclick="() => StartEditTask(task)">@task.Title</span>
+                                              @ondblclick="() => StartEditTask(task)"
+                                              @ondblclick:stopPropagation="true">@task.Title</span>
                                     }
                                     @if (task.Participants.Any())
                                     {
@@ -607,6 +667,19 @@
                                         <button class="delete-btn" @onclick="() => DeleteTask(task)">&#128465;</button>
                                     }
                                 </div>
+                                @* Render subtasks *@
+                                @if (task.Subtasks != null && task.Subtasks.Any())
+                                {
+                                    @foreach (var subtask in task.Subtasks.OrderBy(s => s.SortOrder).ThenBy(s => s.CreatedAt))
+                                    {
+                                        <div class="subtask-row @(subtask.IsCompleted ? "completed" : "")">
+                                            <span class="subtask-indent"></span>
+                                            <input type="checkbox" checked="@subtask.IsCompleted" @onchange="() => ToggleTask(subtask)" />
+                                            <span class="subtask-title @(subtask.IsCompleted ? "strikethrough" : "")">@subtask.Title</span>
+                                            <button class="delete-btn small" @onclick="() => DeleteTask(subtask)">&#128465;</button>
+                                        </div>
+                                    }
+                                }
                             }
                         }
                         else
@@ -623,7 +696,16 @@
                         {
                             @foreach (var task in OverdueTasks)
                             {
-                                <div class="task-row waiting @(task.ScheduledTime.HasValue ? "was-scheduled" : "")">
+                                <div class="task-row waiting @(task.ScheduledTime.HasValue ? "was-scheduled" : "") @(DraggingTaskId == task.Id ? "dragging" : "") @(!task.IsCompleted ? "draggable-task" : "")"
+                                     draggable="@(!task.IsCompleted ? "true" : "false")"
+                                     @ondragstart="() => OnDragStart(task)"
+                                     @ondragend="OnDragEnd"
+                                     @ondblclick="() => OpenTimeEditor(task)"
+                                     data-task-id="@task.Id">
+                                    @if (!task.IsCompleted)
+                                    {
+                                        <span class="drag-handle" title="Drag to schedule">&#9776;</span>
+                                    }
                                     <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
                                     @if (task.ScheduledTime.HasValue)
                                     {
@@ -645,7 +727,7 @@
                     </div>
                 }
 
-                @if (!ScheduledTasks.Any() && !AllDayTasks.Any() && !OverdueTasks.Any())
+                @if (!ScheduledTasks.Any() && !AllUnscheduledTasks.Any() && !OverdueTasks.Any())
                 {
                     <div class="no-tasks">No tasks for this day. Add one above!</div>
                 }
@@ -655,7 +737,8 @@
                 @foreach (var task in WeeklyTasks)
                 {
                     var isPast = IsTaskInPast(task);
-                    <div class="task-row @(task.IsCompleted ? "completed" : "") @(isPast ? "past" : "")">
+                    <div class="task-row @(task.IsCompleted ? "completed" : "") @(isPast ? "past" : "")"
+                         @ondblclick="() => OpenTimeEditor(task)">
                         <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" disabled="@isPast" />
                         @if (EditingTaskId == task.Id)
                         {
@@ -691,10 +774,20 @@
 
     </div>
 
+    <!-- Resize Handle between center panel and schedule -->
+    @if (IsDailyView)
+    {
+        <div class="panel-resize-handle"
+             @onmousedown="StartPanelResize"
+             title="Drag to resize panels">
+            <span class="resize-grip">⋮⋮</span>
+        </div>
+    }
+
     <!-- Day Roller (draggable multi-day scroller) - Always visible in daily view -->
     @if (IsDailyView)
     {
-        <div class="day-roller-wrapper">
+        <div class="day-roller-wrapper" style="@(SchedulePanelWidth > 0 ? $"width: {SchedulePanelWidth}px !important; min-width: {SchedulePanelWidth}px !important;" : "")">
             <!-- Day Navigation Roller -->
             <div class="day-roller">
                 <button class="day-nav-btn up" @onclick="PrevDay" title="Previous Day">&#9650;</button>
@@ -713,7 +806,7 @@
                     {
                         var dayOffset = offset;
                         var displayDate = SelectedDate.AddDays(dayOffset);
-                        var isToday = displayDate.Date == DateTime.Today;
+                        var isToday = displayDate.Date == LocalToday;
                         var isSelected = dayOffset == 0;
                         var isWeekend = displayDate.DayOfWeek == DayOfWeek.Saturday || displayDate.DayOfWeek == DayOfWeek.Sunday;
                         var taskCount = GetTaskCountForDate(displayDate);
@@ -741,44 +834,64 @@
                 </div>
             </div>
 
-            <!-- Time & Tasks Panel - Always visible -->
+            <!-- Time & Tasks Panel - Always visible (20-minute slots) -->
             <div class="time-tasks-panel">
                 <div class="time-panel-body">
                     <div class="time-column" @ref="timeRollerRef" @onscroll="OnTimeRollerScroll">
-                        @for (int hour = WorkingHoursStart; hour <= WorkingHoursEnd; hour++)
+                        @foreach (var slot in GetTimeSlots())
                         {
-                            var currentHour = hour;
-                            var isCurrentHour = DateTime.Now.Hour == currentHour && SelectedDate.Date == DateTime.Today;
-                            var hasItems = GetTasksAtHour(currentHour).Any() || GetGoogleEventsAtHour(currentHour).Any();
-                            var isNonWorking = hour < 8 || hour >= 18;
+                            var isCurrentSlot = IsCurrentTimeSlot(slot);
+                            var hasItems = GetTasksAtSlot(slot).Any() || GetGoogleEventsAtSlot(slot).Any();
+                            var isNonWorking = slot.Hours < 8 || slot.Hours >= 18;
+                            var isHourStart = slot.Minutes == 0;
 
-                            <div class="time-slot @(isCurrentHour ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "")">
-                                <span class="hour-text">@FormatHour(currentHour)</span>
+                            <div class="time-slot @(isCurrentSlot ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "") @(isHourStart ? "hour-start" : "")">
+                                <span class="hour-text">@FormatTimeSlot(slot)</span>
                             </div>
                         }
                     </div>
 
                     <div class="tasks-column" @ref="syncedTasksRef" @onscroll="OnSyncedTasksScroll">
-                        @for (int hour = WorkingHoursStart; hour <= WorkingHoursEnd; hour++)
+                        @foreach (var slot in GetTimeSlots())
                         {
-                            var currentHour = hour;
-                            var tasksAtHour = GetTasksAtHour(currentHour);
-                            var eventsAtHour = GetGoogleEventsAtHour(currentHour);
-                            var isCurrentHour = DateTime.Now.Hour == currentHour && SelectedDate.Date == DateTime.Today;
-                            var hasItems = tasksAtHour.Any() || eventsAtHour.Any();
-                            var isNonWorking = hour < 8 || hour >= 18;
+                            var tasksAtSlot = GetTasksAtSlot(slot);
+                            var eventsAtSlot = GetGoogleEventsAtSlot(slot);
+                            var isCurrentSlot = IsCurrentTimeSlot(slot);
+                            var hasItems = tasksAtSlot.Any() || eventsAtSlot.Any();
+                            var isNonWorking = slot.Hours < 8 || slot.Hours >= 18;
+                            var isPastSlot = SelectedDate.Date < LocalToday || (SelectedDate.Date == LocalToday && slot < DateTime.Now.TimeOfDay);
+                            var isHourStart = slot.Minutes == 0;
 
-                            <div class="task-slot @(isCurrentHour ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "")">
-                                @foreach (var task in tasksAtHour)
+                            <div class="task-slot @(isCurrentSlot ? "now" : "") @(hasItems ? "has-items" : "") @(isNonWorking ? "off-hours" : "") @(DragOverSlot == slot ? "drag-over" : "") @(isPastSlot ? "past-slot" : "") @(isHourStart ? "hour-start" : "")"
+                                 @ondragover="(e) => OnDragOverSlot(e, slot)"
+                                 @ondragover:preventDefault
+                                 @ondragleave="OnDragLeaveSlot"
+                                 @ondrop="() => OnDropOnSlot(slot)"
+                                 data-slot="@slot.TotalMinutes">
+                                @if (DragOverSlot == slot && DraggingTaskId.HasValue && !isPastSlot)
                                 {
-                                    <div class="slot-task @(task.IsCompleted ? "done" : "") @(EditingTaskId == task.Id ? "active" : "")"
-                                         @onclick="() => SelectTaskFromSchedule(task)">
+                                    <div class="drop-preview">Drop to schedule at @FormatTimeSlot(slot)</div>
+                                }
+                                @foreach (var task in tasksAtSlot)
+                                {
+                                    var isTaskDragging = DraggingScheduledTaskId == task.Id;
+                                    var isSelected = SelectedScheduleTaskId == task.Id;
+                                    <div class="slot-task @(task.IsCompleted ? "done" : "") @(isSelected ? "selected" : "") @(isTaskDragging ? "dragging" : "")"
+                                         draggable="@(!task.IsCompleted && !isPastSlot ? "true" : "false")"
+                                         @ondragstart="() => OnScheduledTaskDragStart(task)"
+                                         @ondragend="OnScheduledTaskDragEnd"
+                                         @onclick="() => SelectTaskFromSchedule(task)"
+                                         @ondblclick="() => OpenAppointmentDetail(task)">
+                                        @if (!task.IsCompleted && !isPastSlot)
+                                        {
+                                            <span class="slot-drag-handle" title="Drag to reschedule">&#8597;</span>
+                                        }
                                         <span class="t-time">@FormatTime(task.ScheduledTime)</span>
                                         <span class="t-title">@task.Title</span>
                                         <span class="t-src pfd">P</span>
                                     </div>
                                 }
-                                @foreach (var evt in eventsAtHour)
+                                @foreach (var evt in eventsAtSlot)
                                 {
                                     <div class="slot-task google">
                                         <span class="t-time">@evt.Start.ToString("h:mm")</span>
@@ -790,6 +903,7 @@
                         }
                     </div>
                 </div>
+
             </div>
         </div>
     }
@@ -852,19 +966,19 @@
                     <div class="quick-reschedule">
                         <label>Quick options:</label>
                         <div class="quick-buttons">
-                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), null)">Tomorrow</button>
-                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), new TimeSpan(9, 0, 0))">Tomorrow Morning</button>
-                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(1), new TimeSpan(14, 0, 0))">Tomorrow Afternoon</button>
+                            <button @onclick="() => QuickReschedule(LocalToday.AddDays(1), null)">Tomorrow</button>
+                            <button @onclick="() => QuickReschedule(LocalToday.AddDays(1), new TimeSpan(9, 0, 0))">Tomorrow Morning</button>
+                            <button @onclick="() => QuickReschedule(LocalToday.AddDays(1), new TimeSpan(14, 0, 0))">Tomorrow Afternoon</button>
                         </div>
                         <div class="quick-buttons" style="margin-top: 6px;">
-                            <button @onclick="() => QuickReschedule(GetNextWeekday(DateTime.Today, DayOfWeek.Monday), null)">Next Monday</button>
-                            <button @onclick="() => QuickReschedule(DateTime.Today.AddDays(7), null)">Next Week</button>
+                            <button @onclick="() => QuickReschedule(GetNextWeekday(LocalToday, DayOfWeek.Monday), null)">Next Monday</button>
+                            <button @onclick="() => QuickReschedule(LocalToday.AddDays(7), null)">Next Week</button>
                         </div>
                     </div>
 
                     <div class="date-picker-row">
                         <label>Or pick a date:</label>
-                        <input type="date" @bind="RescheduleTargetDate" min="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                        <input type="date" @bind="RescheduleTargetDate" min="@LocalToday.ToString("yyyy-MM-dd")" />
                     </div>
 
                     <div class="time-entry-row">
@@ -1079,6 +1193,230 @@
                 <div class="modal-footer">
                     <button class="cancel-btn" @onclick="CloseShareModal">Cancel</button>
                     <button class="save-btn" @onclick="ConfirmShareTask" disabled="@(SelectedShareGroupId == 0)">Share</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Appointment Detail Panel (double-click on scheduled task) -->
+    @if (AppointmentDetailTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseAppointmentDetail">
+            <div class="appointment-detail-panel" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#128197; Appointment Details</span>
+                    <button class="close-btn" @onclick="CloseAppointmentDetail">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <!-- Title -->
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" @bind="AppointmentTitle" placeholder="Appointment title" />
+                    </div>
+
+                    <!-- Description -->
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea @bind="AppointmentDescription" placeholder="Add notes or details..." rows="3"></textarea>
+                    </div>
+
+                    <!-- Date & Time -->
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label>Date</label>
+                            <div class="date-display">@AppointmentDetailTask.TaskDate.ToString("ddd, MMM d, yyyy")</div>
+                        </div>
+                        <div class="form-group half">
+                            <label>Time</label>
+                            <input type="text" @bind="AppointmentTimeValue" placeholder="HH:mm (e.g. 09:00)" />
+                        </div>
+                    </div>
+
+                    <!-- Duration -->
+                    <div class="form-group">
+                        <label>Duration</label>
+                        <div class="duration-options">
+                            <button class="duration-btn @(AppointmentDuration == 15 ? "selected" : "")" @onclick="() => AppointmentDuration = 15">15m</button>
+                            <button class="duration-btn @(AppointmentDuration == 30 ? "selected" : "")" @onclick="() => AppointmentDuration = 30">30m</button>
+                            <button class="duration-btn @(AppointmentDuration == 45 ? "selected" : "")" @onclick="() => AppointmentDuration = 45">45m</button>
+                            <button class="duration-btn @(AppointmentDuration == 60 ? "selected" : "")" @onclick="() => AppointmentDuration = 60">1h</button>
+                            <button class="duration-btn @(AppointmentDuration == 90 ? "selected" : "")" @onclick="() => AppointmentDuration = 90">1.5h</button>
+                            <button class="duration-btn @(AppointmentDuration == 120 ? "selected" : "")" @onclick="() => AppointmentDuration = 120">2h</button>
+                        </div>
+                    </div>
+
+                    <!-- Recurrence Section -->
+                    <div class="form-group">
+                        <label>&#128257; Repeat</label>
+                        <div class="recurrence-options">
+                            <button class="recurrence-btn @(AppointmentRecurrence == RecurrenceType.None ? "selected" : "")" @onclick="() => AppointmentRecurrence = RecurrenceType.None">Never</button>
+                            <button class="recurrence-btn @(AppointmentRecurrence == RecurrenceType.Daily ? "selected" : "")" @onclick="() => AppointmentRecurrence = RecurrenceType.Daily">Daily</button>
+                            <button class="recurrence-btn @(AppointmentRecurrence == RecurrenceType.Weekly ? "selected" : "")" @onclick="() => AppointmentRecurrence = RecurrenceType.Weekly">Weekly</button>
+                            <button class="recurrence-btn @(AppointmentRecurrence == RecurrenceType.Monthly ? "selected" : "")" @onclick="() => AppointmentRecurrence = RecurrenceType.Monthly">Monthly</button>
+                        </div>
+                        @if (AppointmentRecurrence != RecurrenceType.None)
+                        {
+                            <div class="recurrence-details">
+                                <div class="recurrence-interval">
+                                    <span>Every</span>
+                                    <input type="number" min="1" max="30" @bind="AppointmentRecurrenceInterval" />
+                                    <span>@GetRecurrenceIntervalLabel()</span>
+                                </div>
+                                @if (AppointmentRecurrence == RecurrenceType.Weekly)
+                                {
+                                    <div class="recurrence-days">
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Mon") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Mon")'>M</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Tue") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Tue")'>T</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Wed") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Wed")'>W</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Thu") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Thu")'>T</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Fri") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Fri")'>F</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Sat") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Sat")'>S</button>
+                                        <button class="day-btn @(AppointmentRecurrenceDays.Contains("Sun") ? "selected" : "")" @onclick='() => ToggleRecurrenceDay("Sun")'>S</button>
+                                    </div>
+                                }
+                                <div class="recurrence-end">
+                                    <label>
+                                        <input type="checkbox" @bind="HasRecurrenceEndDate" /> Ends on:
+                                    </label>
+                                    @if (HasRecurrenceEndDate)
+                                    {
+                                        <input type="date" @bind="AppointmentRecurrenceEndDate" min="@AppointmentDetailTask.TaskDate.ToString("yyyy-MM-dd")" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Invitees/Participants Section -->
+                    <div class="form-group">
+                        <label>&#128101; Invitees</label>
+                        @if (AppointmentDetailTask.Participants.Any())
+                        {
+                            <div class="invitees-list">
+                                @foreach (var tp in AppointmentDetailTask.Participants)
+                                {
+                                    <div class="invitee-chip">
+                                        <span class="invitee-avatar">@GetInitials(tp.Participant.Name)</span>
+                                        <span class="invitee-name">@tp.Participant.Name</span>
+                                        <button class="remove-invitee" @onclick="() => RemoveAppointmentInvitee(tp.Participant)">&#10005;</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <div class="add-invitee-row">
+                            <input type="text" @bind="NewParticipantName" placeholder="Add invitee name..." @onkeydown="HandleAppointmentInviteeKeyDown" />
+                            <button class="add-invitee-btn" @onclick="AddAppointmentInvitee" disabled="@string.IsNullOrWhiteSpace(NewParticipantName)">Add</button>
+                        </div>
+                        @if (RecentParticipants.Any())
+                        {
+                            <div class="recent-invitees">
+                                <span class="recent-label">Recent:</span>
+                                @foreach (var p in RecentParticipants.Take(5))
+                                {
+                                    @if (!AppointmentDetailTask.Participants.Any(tp => tp.ParticipantId == p.Id))
+                                    {
+                                        <button class="recent-invitee-btn" @onclick="() => AddRecentToAppointment(p)">@p.Name</button>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(ParticipantsMessage))
+                    {
+                        <div class="form-message @(ParticipantsMessage.Contains("Error") ? "error" : "success")">@ParticipantsMessage</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="delete-btn" @onclick="DeleteAppointment">&#128465; Delete</button>
+                    <button class="unschedule-btn" @onclick="UnscheduleAppointment" title="Remove from schedule and put back in Tasks list">&#128203; Unschedule</button>
+                    <div class="footer-right">
+                        <button class="cancel-btn" @onclick="CloseAppointmentDetail">Cancel</button>
+                        <button class="save-btn" @onclick="SaveAppointmentDetail" disabled="@IsSavingAppointment">
+                            @if (IsSavingAppointment)
+                            {
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Recurring Delete Dialog -->
+    @if (ShowRecurringDeleteDialog && DeletingRecurringTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseRecurringDeleteDialog">
+            <div class="recurring-delete-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#128465; Delete Recurring Appointment</span>
+                    <button class="close-btn" @onclick="CloseRecurringDeleteDialog">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="delete-task-title">@DeletingRecurringTask.Title</div>
+                    <div class="delete-options">
+                        <label class="delete-option">
+                            <input type="radio" name="deleteMode" value="this" checked="@(RecurringDeleteMode == "this")" @onchange='() => RecurringDeleteMode = "this"' />
+                            <span class="option-label">Delete only this occurrence</span>
+                            <span class="option-desc">@DeletingRecurringTask.TaskDate.ToString("ddd, MMM d") @(DeletingRecurringTask.ScheduledTime.HasValue ? "at " + FormatTime(DeletingRecurringTask.ScheduledTime) : "")</span>
+                        </label>
+                        <label class="delete-option">
+                            <input type="radio" name="deleteMode" value="all" checked="@(RecurringDeleteMode == "all")" @onchange='() => RecurringDeleteMode = "all"' />
+                            <span class="option-label">Delete all occurrences</span>
+                            <span class="option-desc">@RecurringInstances.Count total appointments in this series</span>
+                        </label>
+                        <label class="delete-option">
+                            <input type="radio" name="deleteMode" value="select" checked="@(RecurringDeleteMode == "select")" @onchange='() => RecurringDeleteMode = "select"' />
+                            <span class="option-label">Select which to delete</span>
+                            <span class="option-desc">Choose specific dates below</span>
+                        </label>
+                    </div>
+
+                    @if (RecurringDeleteMode == "select")
+                    {
+                        <div class="instance-selection">
+                            <div class="selection-header">
+                                <button class="select-all-btn" @onclick="SelectAllInstancesForDeletion">Select All</button>
+                                <button class="select-none-btn" @onclick="DeselectAllInstancesForDeletion">Select None</button>
+                                <span class="selection-count">@SelectedInstancesForDeletion.Count selected</span>
+                            </div>
+                            <div class="instance-list">
+                                @foreach (var instance in RecurringInstances)
+                                {
+                                    var isSelected = SelectedInstancesForDeletion.Contains(instance.Id);
+                                    var isPast = instance.TaskDate.Date < LocalToday;
+                                    <label class="instance-item @(isSelected ? "selected" : "") @(isPast ? "past" : "")">
+                                        <input type="checkbox" checked="@isSelected" @onchange="() => ToggleInstanceForDeletion(instance.Id)" />
+                                        <span class="instance-date">@instance.TaskDate.ToString("ddd, MMM d")</span>
+                                        @if (instance.ScheduledTime.HasValue)
+                                        {
+                                            <span class="instance-time">@FormatTime(instance.ScheduledTime)</span>
+                                        }
+                                        @if (instance.Id == DeletingRecurringTask.Id)
+                                        {
+                                            <span class="current-badge">current</span>
+                                        }
+                                        @if (isPast)
+                                        {
+                                            <span class="past-badge">past</span>
+                                        }
+                                    </label>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseRecurringDeleteDialog">Cancel</button>
+                    <button class="delete-confirm-btn" @onclick="ConfirmRecurringDelete"
+                            disabled="@(RecurringDeleteMode == "select" && !SelectedInstancesForDeletion.Any())">
+                        Delete @(RecurringDeleteMode == "this" ? "This" : RecurringDeleteMode == "all" ? "All" : SelectedInstancesForDeletion.Count.ToString())
+                    </button>
                 </div>
             </div>
         </div>
@@ -1332,9 +1670,79 @@
             </div>
         </div>
     }
+
+    <!-- Task Template Manager Modal -->
+    @if (ShowTemplateManager)
+    {
+        <div class="modal-overlay" @onclick="CloseTemplateManager">
+            <div class="template-manager-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>Manage Task Templates</span>
+                    <button class="close-btn" @onclick="CloseTemplateManager">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="template-list-panel">
+                        <h4>Templates</h4>
+                        <div class="template-list">
+                            @foreach (var template in TaskTemplates)
+                            {
+                                <div class="template-list-item @(EditingTemplate?.Id == template.Id ? "selected" : "")"
+                                     @onclick="() => EditTemplate(template)">
+                                    <span class="template-name">@template.Name</span>
+                                    <span class="subtask-count">@template.SubtaskTemplates.Count steps</span>
+                                    <button class="delete-template-btn" @onclick="() => DeleteTemplate(template)" @onclick:stopPropagation="true">&#128465;</button>
+                                </div>
+                            }
+                        </div>
+                        <div class="new-template-form">
+                            <input type="text" @bind="NewTemplateName" placeholder="New template name..." />
+                            <button class="add-template-btn" @onclick="CreateNewTemplate" disabled="@string.IsNullOrWhiteSpace(NewTemplateName)">&#43; Add</button>
+                        </div>
+                    </div>
+                    <div class="template-edit-panel">
+                        @if (EditingTemplate != null)
+                        {
+                            <h4>@EditingTemplate.Name - Subtasks</h4>
+                            <div class="subtask-template-list">
+                                @foreach (var subtask in EditingTemplate.SubtaskTemplates.OrderBy(s => s.SortOrder))
+                                {
+                                    <div class="subtask-template-item">
+                                        <span class="subtask-order">@(subtask.SortOrder + 1).</span>
+                                        <span class="subtask-title">@subtask.Title</span>
+                                        <button class="remove-subtask-btn" @onclick="() => RemoveSubtaskFromTemplate(subtask)">&#10005;</button>
+                                    </div>
+                                }
+                            </div>
+                            <div class="new-subtask-form">
+                                <input type="text" @bind="NewSubtaskTitle" @onkeydown="HandleSubtaskKeyDown" placeholder="Add subtask step..." />
+                                <button class="add-subtask-btn" @onclick="AddSubtaskToTemplate" disabled="@string.IsNullOrWhiteSpace(NewSubtaskTitle)">&#43;</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="no-template-selected">
+                                <p>Select a template to edit its subtasks, or create a new template.</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseTemplateManager">Close</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
+    // LocalToday is set from browser's local time to handle timezone correctly
+    private DateTime _localToday = DateTime.Today;
+    private DateTime LocalToday
+    {
+        get => _localToday;
+        set => _localToday = value;
+    }
+
     private DateTime _selectedDate = DateTime.Today;
     private DateTime SelectedDate
     {
@@ -1354,6 +1762,7 @@
     private List<DailyTask> Tasks { get; set; } = new();
     private List<DailyTask> WeeklyTasks { get; set; } = new();
     private List<DailyTask> OverdueTasks { get; set; } = new();
+    private List<DailyTask> AllUnscheduledTasks { get; set; } = new(); // All unscheduled tasks across all dates
     private List<CalendarDay> CalendarDays { get; set; } = new();
     private bool _isLoadingTasks = false; // Prevents concurrent DB calls
 
@@ -1366,6 +1775,8 @@
     private TaskSection ActiveTaskSection { get; set; } = TaskSection.Scheduled;
 
     private int? EditingTaskId { get; set; }
+    private int? SelectedScheduleTaskId { get; set; } // Selected task in schedule panel (single click)
+    private DotNetObjectReference<Planner>? _dotNetRef;
 
     // Time roller scroll sync
     private ElementReference timeRollerRef;
@@ -1388,7 +1799,7 @@
 
     // Reschedule modal
     private DailyTask? ReschedulingTask { get; set; }
-    private DateTime RescheduleTargetDate { get; set; } = DateTime.Today.AddDays(1);
+    private DateTime RescheduleTargetDate { get; set; } = DateTime.Now.Date.AddDays(1);
     private bool KeepScheduledTime { get; set; } = true;
     private string RescheduleTimePreset { get; set; } = "none";  // morning, afternoon, evening, custom, none
     private string RescheduleCustomTime { get; set; } = "";
@@ -1435,11 +1846,42 @@
     private DailyTask? ShareTask { get; set; }
     private int SelectedShareGroupId { get; set; } = 0;
 
+    // Appointment Detail Panel (double-click on scheduled task)
+    private DailyTask? AppointmentDetailTask { get; set; }
+    private string AppointmentTitle { get; set; } = "";
+    private string AppointmentDescription { get; set; } = "";
+    private string AppointmentTimeValue { get; set; } = "";
+    private int AppointmentDuration { get; set; } = 30;
+    private bool IsSavingAppointment { get; set; } = false;
+    private RecurrenceType AppointmentRecurrence { get; set; } = RecurrenceType.None;
+    private int AppointmentRecurrenceInterval { get; set; } = 1;
+    private List<string> AppointmentRecurrenceDays { get; set; } = new();
+    private DateTime? AppointmentRecurrenceEndDate { get; set; }
+    private bool HasRecurrenceEndDate { get; set; } = false;
+
+    // Recurring delete dialog
+    private bool ShowRecurringDeleteDialog { get; set; } = false;
+    private DailyTask? DeletingRecurringTask { get; set; }
+    private List<DailyTask> RecurringInstances { get; set; } = new();
+    private HashSet<int> SelectedInstancesForDeletion { get; set; } = new();
+    private string RecurringDeleteMode { get; set; } = "this"; // "this", "all", "select"
+
     // Insight History
     private bool ShowInsightHistory { get; set; } = false;
     private List<InsightHistory> InsightHistoryList { get; set; } = new();
     private InsightHistory? SelectedHistoryInsight { get; set; }
     private string ShareMessage { get; set; } = "";
+
+    // Drag and drop
+    private int? DraggingTaskId { get; set; }
+    private int? DraggingScheduledTaskId { get; set; } // For dragging within schedule panel
+    private int? DragOverHour { get; set; }
+    private TimeSpan? DragOverSlot { get; set; }
+
+    // Panel resize state
+    private int SchedulePanelWidth { get; set; } = 0; // 0 means use default CSS width
+    private bool IsResizingPanels { get; set; } = false;
+    private double ResizeStartX { get; set; } = 0;
 
     // Task Actions (Agentic AI)
     private Dictionary<int, TaskAction?> TaskActions { get; set; } = new();
@@ -1477,6 +1919,15 @@
     private int WorkingHoursStart { get; set; } = 6;  // 6 AM
     private int WorkingHoursEnd { get; set; } = 20;   // 8 PM
 
+    // Task Templates
+    private List<TaskTemplate> TaskTemplates { get; set; } = new();
+    private bool ShowTemplateDropdown { get; set; } = false;
+    private bool ShowTemplateManager { get; set; } = false;
+    private TaskTemplate? EditingTemplate { get; set; } = null;
+    private string NewTemplateName { get; set; } = "";
+    private string NewTemplateDescription { get; set; } = "";
+    private string NewSubtaskTitle { get; set; } = "";
+
     // External Calendars
     private bool IsGoogleConnected { get; set; } = false;
     private bool IsMicrosoftConnected { get; set; } = false;
@@ -1507,6 +1958,27 @@
     {
         if (firstRender)
         {
+            // Get the actual local date from browser (handles timezone correctly)
+            try
+            {
+                var localDateStr = await JSRuntime.InvokeAsync<string>("eval", "new Date().toLocaleDateString('en-CA')");
+                if (DateTime.TryParse(localDateStr, out var localDate))
+                {
+                    LocalToday = localDate;
+                    // Only update if we haven't navigated away from today
+                    if (_selectedDate.Date == DateTime.Today.Date || _selectedDate.Date == DateTime.UtcNow.Date)
+                    {
+                        _selectedDate = localDate;
+                        CurrentMonth = localDate;
+                    }
+                }
+            }
+            catch { /* Fall back to server time */ }
+
+            // Register global ESC key handler
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("registerEscHandler", _dotNetRef);
+
             await CheckAuthAndLoadAsync();
         }
     }
@@ -1563,6 +2035,9 @@
 
             // Load user groups
             await LoadUserGroupsAsync();
+
+            // Load task templates
+            await LoadTaskTemplatesAsync();
 
             // Check if Ollama is available for task actions
             await CheckOllamaAvailability();
@@ -1677,6 +2152,31 @@
         {
             CalendarDays.Add(new CalendarDay { Date = nextMonth.AddDays(i), IsCurrentMonth = false });
         }
+
+        // Load task counts asynchronously
+        _ = LoadCalendarTaskCountsAsync();
+    }
+
+    private async Task LoadCalendarTaskCountsAsync()
+    {
+        if (CurrentUserId == 0 || !CalendarDays.Any()) return;
+
+        try
+        {
+            var startDate = CalendarDays.First().Date;
+            var endDate = CalendarDays.Last().Date;
+            var tasks = await TaskService.GetTasksForDateRangeAsync(startDate, endDate, CurrentUserId);
+
+            foreach (var day in CalendarDays)
+            {
+                day.TaskCount = tasks.Count(t => t.TaskDate.Date == day.Date.Date && !t.IsCompleted);
+            }
+            StateHasChanged();
+        }
+        catch
+        {
+            // Silently ignore errors loading task counts
+        }
     }
 
     private async Task LoadTasksAsync()
@@ -1687,15 +2187,12 @@
         _isLoadingTasks = true;
         try
         {
-            // Load overdue tasks (only for today's view)
-            if (SelectedDate.Date == DateTime.Today)
-            {
-                OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
-            }
-            else
-            {
-                OverdueTasks.Clear();
-            }
+            // Always load overdue tasks - they should be visible regardless of selected date
+            // The Waiting tab shows tasks that are past due and need attention
+            OverdueTasks = await TaskService.GetOverdueTasksAsync(LocalToday, CurrentUserId);
+
+            // Always load all unscheduled tasks - they show in the Tasks tab regardless of selected date
+            AllUnscheduledTasks = await TaskService.GetUnscheduledTasksAsync(CurrentUserId);
 
             if (IsDailyView)
             {
@@ -1751,7 +2248,7 @@
     {
         if (IsDailyView)
         {
-            return SelectedDate.Date == DateTime.Today
+            return SelectedDate.Date == LocalToday
                 ? $"TODAY - {SelectedDate:dddd, MMMM d, yyyy}"
                 : SelectedDate.ToString("dddd, MMMM d, yyyy");
         }
@@ -1777,17 +2274,24 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
-        // Parse time from task text (e.g., "meeting at 1:00 pm" -> time: 13:00)
-        var parseResult = TaskTimeParser.Parse(NewTaskText);
+        // Don't allow adding tasks to past days - use today instead
+        var taskDate = SelectedDate.Date < LocalToday ? LocalToday : SelectedDate;
+
+        // Parse time and recurrence from task text (e.g., "teach 333 MW 3:00 pm till May 1")
+        var parseResult = TaskTimeParser.ParseWithRecurrence(NewTaskText);
 
         var task = new DailyTask
         {
             Title = parseResult.CleanedTitle,
-            TaskDate = SelectedDate,
+            TaskDate = taskDate,
             IsCompleted = false,
             SortOrder = Tasks.Count,
             IsAllDay = true,
-            UserId = CurrentUserId
+            UserId = CurrentUserId,
+            RecurrenceType = parseResult.RecurrenceType,
+            RecurrenceInterval = 1,
+            RecurrenceDays = parseResult.RecurrenceDays != null ? string.Join(",", parseResult.RecurrenceDays) : null,
+            RecurrenceEndDate = parseResult.RecurrenceEndDate
         };
 
         // Priority 1: Use manually entered time from time input field
@@ -1804,6 +2308,13 @@
         }
 
         await TaskService.CreateTaskAsync(task);
+
+        // Generate recurring instances if recurrence is set
+        if (parseResult.RecurrenceType != RecurrenceType.None)
+        {
+            await GenerateRecurringInstances(task);
+        }
+
         NewTaskText = "";
         NewTaskTimeText = "";
         await LoadTasksAsync();
@@ -1847,13 +2358,13 @@
 
     private async Task MoveToToday(DailyTask task)
     {
-        await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, CurrentUserId);
+        await TaskService.RescheduleTaskAsync(task.Id, LocalToday, CurrentUserId);
         await LoadTasksAsync();
     }
 
     private bool IsTaskInPast(DailyTask task)
     {
-        return task.TaskDate.Date < DateTime.Today;
+        return task.TaskDate.Date < LocalToday;
     }
 
     private void StartEditTask(DailyTask task)
@@ -1878,13 +2389,21 @@
 
     private void SelectTaskFromSchedule(DailyTask task)
     {
-        // Don't allow editing past tasks
-        if (IsTaskInPast(task)) return;
+        // Toggle selection - if already selected, deselect
+        if (SelectedScheduleTaskId == task.Id)
+        {
+            SelectedScheduleTaskId = null;
+        }
+        else
+        {
+            SelectedScheduleTaskId = task.Id;
+        }
+    }
 
-        // Set the task as editing - this highlights it in the task list and enables editing
-        EditingTaskId = task.Id;
-        EditingTaskText = task.Title;
-        EditingTask = task;
+    private void ClearScheduleSelection()
+    {
+        SelectedScheduleTaskId = null;
+        StateHasChanged();
     }
 
     private async Task SaveTaskEdit()
@@ -1915,6 +2434,37 @@
             EditingTaskId = null;
             EditingTask = null;
         }
+    }
+
+    private void HandleGlobalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            HandleEscapeKey();
+        }
+    }
+
+    [JSInvokable]
+    public void HandleEscapeKeyJS()
+    {
+        HandleEscapeKey();
+    }
+
+    private void HandleEscapeKey()
+    {
+        // Clear schedule selection
+        SelectedScheduleTaskId = null;
+        // Close any open modals
+        if (AppointmentDetailTask != null)
+        {
+            CloseAppointmentDetail();
+        }
+        // Close recurring delete dialog
+        if (ShowRecurringDeleteDialog)
+        {
+            CloseRecurringDeleteDialog();
+        }
+        StateHasChanged();
     }
 
     private async Task HandleWeeklyEditKeyDown(KeyboardEventArgs e)
@@ -2061,7 +2611,7 @@
 
     private async Task GoToToday()
     {
-        SelectedDate = DateTime.Today;
+        SelectedDate = LocalToday;
         await LoadTasksAsync();
     }
 
@@ -2212,7 +2762,7 @@
         try
         {
             var recentTasks = await TaskService.GetRecentTasksAsync(CurrentUserId, 30);
-            var overdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, CurrentUserId);
+            var overdueTasks = await TaskService.GetOverdueTasksAsync(LocalToday, CurrentUserId);
             var todayTasks = Tasks.ToList();
 
             // Get insights with history tracking (uses raw data comparison, not AI-on-AI)
@@ -2385,7 +2935,7 @@
         var workEnd = TimeSpan.FromHours(18);
         var currentTime = DateTime.Now.TimeOfDay;
 
-        if (SelectedDate.Date == DateTime.Today && currentTime > workStart)
+        if (SelectedDate.Date == LocalToday && currentTime > workStart)
         {
             workStart = TimeSpan.FromMinutes(Math.Ceiling(currentTime.TotalMinutes / 15) * 15); // Round up to next 15 min
         }
@@ -2445,7 +2995,7 @@
         }
 
         // Morning tip
-        if (SelectedDate.Date == DateTime.Today && DateTime.Now.Hour < 10 && scheduledTasks.Any())
+        if (SelectedDate.Date == LocalToday && DateTime.Now.Hour < 10 && scheduledTasks.Any())
         {
             var firstTask = scheduledTasks.First();
             ScheduleAdvice.Add(new ScheduleAdviceItem
@@ -2528,11 +3078,317 @@
         await LoadTasksAsync();
     }
 
+    // Drag and drop methods
+    private void OnDragStart(DailyTask task)
+    {
+        DraggingTaskId = task.Id;
+        StateHasChanged();
+    }
+
+    private void OnDragEnd()
+    {
+        DraggingTaskId = null;
+        DragOverHour = null;
+        StateHasChanged();
+    }
+
+    private void OnDragOver(DragEventArgs e, int hour)
+    {
+        if (DraggingTaskId.HasValue)
+        {
+            DragOverHour = hour;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDragLeave()
+    {
+        DragOverHour = null;
+        StateHasChanged();
+    }
+
+    // New slot-based drag/drop handlers for 20-minute slots
+    private void OnDragOverSlot(DragEventArgs e, TimeSpan slot)
+    {
+        if (DraggingTaskId.HasValue)
+        {
+            DragOverSlot = slot;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDragLeaveSlot()
+    {
+        DragOverSlot = null;
+        StateHasChanged();
+    }
+
+    private async Task OnDropOnSlot(TimeSpan slot)
+    {
+        if (DraggingTaskId.HasValue)
+        {
+            // Don't allow scheduling to past days
+            if (SelectedDate.Date < LocalToday)
+            {
+                DraggingTaskId = null;
+                DragOverSlot = null;
+                return;
+            }
+
+            // Don't allow scheduling to past slots on today
+            if (SelectedDate.Date == LocalToday && slot < DateTime.Now.TimeOfDay)
+            {
+                DraggingTaskId = null;
+                DragOverSlot = null;
+                return;
+            }
+
+            var taskId = DraggingTaskId.Value;
+
+            // Check if task is from a different date (overdue or future) - move it to selected date
+            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId) ?? AllUnscheduledTasks.FirstOrDefault(t => t.Id == taskId);
+            if (task != null && task.TaskDate.Date != SelectedDate.Date)
+            {
+                // Move task to selected date first
+                await TaskService.RescheduleTaskAsync(taskId, SelectedDate, CurrentUserId);
+            }
+
+            // Schedule the task at this slot with 20-minute duration
+            await TaskService.ScheduleTaskTimeAsync(taskId, slot, CurrentUserId, 20);
+
+            DraggingTaskId = null;
+            DragOverSlot = null;
+
+            await LoadTasksAsync();
+        }
+    }
+
+    private async Task OnDropOnHour(int hour)
+    {
+        if (DraggingTaskId.HasValue)
+        {
+            // Don't allow scheduling to past days
+            if (SelectedDate.Date < LocalToday)
+            {
+                DraggingTaskId = null;
+                DragOverHour = null;
+                return;
+            }
+
+            // Don't allow scheduling to past hours on today
+            if (SelectedDate.Date == LocalToday && hour < DateTime.Now.Hour)
+            {
+                DraggingTaskId = null;
+                DragOverHour = null;
+                return;
+            }
+
+            var taskId = DraggingTaskId.Value;
+            var scheduledTime = new TimeSpan(hour, 0, 0);
+
+            // Check if task is from a different date (overdue or future) - move it to selected date
+            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId) ?? AllUnscheduledTasks.FirstOrDefault(t => t.Id == taskId);
+            if (task != null && task.TaskDate.Date != SelectedDate.Date)
+            {
+                // Move task to selected date first
+                await TaskService.RescheduleTaskAsync(taskId, SelectedDate, CurrentUserId);
+            }
+
+            // Schedule the task at this hour
+            await TaskService.ScheduleTaskTimeAsync(taskId, scheduledTime, CurrentUserId, 30);
+
+            DraggingTaskId = null;
+            DragOverHour = null;
+
+            await LoadTasksAsync();
+        }
+    }
+
+    // Scheduled task drag (moving within schedule panel)
+    private void OnScheduledTaskDragStart(DailyTask task)
+    {
+        DraggingScheduledTaskId = task.Id;
+        DraggingTaskId = task.Id; // Also set this so drop zones highlight
+        StateHasChanged();
+    }
+
+    private void OnScheduledTaskDragEnd()
+    {
+        DraggingScheduledTaskId = null;
+        DraggingTaskId = null;
+        DragOverSlot = null;
+        StateHasChanged();
+    }
+
+    // Task Template methods
+    private async Task LoadTaskTemplatesAsync()
+    {
+        try
+        {
+            TaskTemplates = await TaskTemplateService.GetTemplatesAsync(CurrentUserId);
+        }
+        catch
+        {
+            TaskTemplates = new List<TaskTemplate>();
+        }
+    }
+
+    private void ToggleTemplateDropdown()
+    {
+        ShowTemplateDropdown = !ShowTemplateDropdown;
+    }
+
+    private async Task CreateFromTemplate(TaskTemplate template)
+    {
+        ShowTemplateDropdown = false;
+
+        try
+        {
+            await TaskTemplateService.CreateTaskFromTemplateAsync(template.Id, CurrentUserId, SelectedDate);
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating task from template: {ex.Message}");
+        }
+    }
+
+    private void OpenTemplateManager()
+    {
+        ShowTemplateDropdown = false;
+        ShowTemplateManager = true;
+        EditingTemplate = null;
+        NewTemplateName = "";
+        NewTemplateDescription = "";
+    }
+
+    private void CloseTemplateManager()
+    {
+        ShowTemplateManager = false;
+        EditingTemplate = null;
+    }
+
+    private async Task CreateNewTemplate()
+    {
+        if (string.IsNullOrWhiteSpace(NewTemplateName)) return;
+
+        try
+        {
+            var template = await TaskTemplateService.CreateTemplateAsync(
+                CurrentUserId, NewTemplateName.Trim(), NewTemplateDescription.Trim());
+            TaskTemplates.Add(template);
+            EditingTemplate = template;
+            NewTemplateName = "";
+            NewTemplateDescription = "";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating template: {ex.Message}");
+        }
+    }
+
+    private async Task AddSubtaskToTemplate()
+    {
+        if (EditingTemplate == null || string.IsNullOrWhiteSpace(NewSubtaskTitle)) return;
+
+        try
+        {
+            var subtask = await TaskTemplateService.AddSubtaskTemplateAsync(
+                EditingTemplate.Id, NewSubtaskTitle.Trim());
+            EditingTemplate.SubtaskTemplates.Add(subtask);
+            NewSubtaskTitle = "";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding subtask template: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveSubtaskFromTemplate(SubtaskTemplate subtask)
+    {
+        if (EditingTemplate == null) return;
+
+        try
+        {
+            await TaskTemplateService.RemoveSubtaskTemplateAsync(subtask.Id);
+            EditingTemplate.SubtaskTemplates.Remove(subtask);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing subtask template: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteTemplate(TaskTemplate template)
+    {
+        try
+        {
+            await TaskTemplateService.DeleteTemplateAsync(template.Id);
+            TaskTemplates.Remove(template);
+            if (EditingTemplate?.Id == template.Id)
+            {
+                EditingTemplate = null;
+            }
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting template: {ex.Message}");
+        }
+    }
+
+    private void EditTemplate(TaskTemplate template)
+    {
+        EditingTemplate = template;
+        NewSubtaskTitle = "";
+    }
+
+    private async Task HandleSubtaskKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddSubtaskToTemplate();
+        }
+    }
+
+    // Panel resize methods
+    private void StartPanelResize(MouseEventArgs e)
+    {
+        IsResizingPanels = true;
+        ResizeStartX = e.ClientX;
+        // If width is 0, use default width of 340
+        if (SchedulePanelWidth == 0)
+            SchedulePanelWidth = 340;
+    }
+
+    private void OnPanelResize(MouseEventArgs e)
+    {
+        if (!IsResizingPanels) return;
+
+        // Dragging left (e.ClientX decreases) = right panel expands
+        // Dragging right (e.ClientX increases) = right panel shrinks
+        var delta = ResizeStartX - e.ClientX;
+        var newWidth = SchedulePanelWidth + (int)delta;
+
+        // Constrain between 200 and 600 pixels
+        SchedulePanelWidth = Math.Max(200, Math.Min(600, newWidth));
+        ResizeStartX = e.ClientX;
+        StateHasChanged();
+    }
+
+    private void StopPanelResize(MouseEventArgs e)
+    {
+        IsResizingPanels = false;
+    }
+
     // Reschedule methods
     private void OpenRescheduleModal(DailyTask task)
     {
         ReschedulingTask = task;
-        RescheduleTargetDate = DateTime.Today.AddDays(1);
+        RescheduleTargetDate = LocalToday.AddDays(1);
         KeepScheduledTime = task.ScheduledTime.HasValue;
         RescheduleTimePreset = task.ScheduledTime.HasValue ? "none" : "none";
         RescheduleCustomTime = "";
@@ -2646,6 +3502,7 @@
     {
         public DateTime Date { get; set; }
         public bool IsCurrentMonth { get; set; }
+        public int TaskCount { get; set; }
     }
 
     private class PrioritizedTask
@@ -2691,8 +3548,8 @@
         try
         {
             // Import events for the next 30 days
-            var startDate = DateTime.Today;
-            var endDate = DateTime.Today.AddDays(30);
+            var startDate = LocalToday;
+            var endDate = LocalToday.AddDays(30);
 
             var count = await GoogleCalendarService.ImportEventsAsTasksAsync(CurrentUserId, startDate, endDate);
             ImportMessage = count > 0
@@ -2882,7 +3739,63 @@
         return date.AddDays(-1 * diff).Date;
     }
 
-    // Timeline helper methods
+    // Timeline helper methods - 20 minute slots
+    private const int SlotMinutes = 20;
+
+    private IEnumerable<TimeSpan> GetTimeSlots()
+    {
+        for (int hour = WorkingHoursStart; hour <= WorkingHoursEnd; hour++)
+        {
+            for (int minute = 0; minute < 60; minute += SlotMinutes)
+            {
+                yield return new TimeSpan(hour, minute, 0);
+            }
+        }
+    }
+
+    private List<DailyTask> GetTasksAtSlot(TimeSpan slot)
+    {
+        var slotEnd = slot.Add(TimeSpan.FromMinutes(SlotMinutes));
+        return ScheduledTasks
+            .Where(t => t.ScheduledTime.HasValue &&
+                        t.ScheduledTime.Value >= slot &&
+                        t.ScheduledTime.Value < slotEnd)
+            .OrderBy(t => t.ScheduledTime!.Value)
+            .ToList();
+    }
+
+    private List<ExternalCalendarEvent> GetGoogleEventsAtSlot(TimeSpan slot)
+    {
+        if (!IsGoogleConnected) return new List<ExternalCalendarEvent>();
+        var slotEnd = slot.Add(TimeSpan.FromMinutes(SlotMinutes));
+
+        return ExternalEvents
+            .Where(e => !e.IsAllDay &&
+                        e.Start.Date == SelectedDate.Date &&
+                        e.Start.TimeOfDay >= slot &&
+                        e.Start.TimeOfDay < slotEnd)
+            .OrderBy(e => e.Start)
+            .ToList();
+    }
+
+    private bool IsCurrentTimeSlot(TimeSpan slot)
+    {
+        if (SelectedDate.Date != LocalToday) return false;
+        var now = DateTime.Now.TimeOfDay;
+        var slotEnd = slot.Add(TimeSpan.FromMinutes(SlotMinutes));
+        return now >= slot && now < slotEnd;
+    }
+
+    private string FormatTimeSlot(TimeSpan slot)
+    {
+        var hour = slot.Hours;
+        var minute = slot.Minutes;
+        var ampm = hour >= 12 ? "pm" : "am";
+        var displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+        return minute == 0 ? $"{displayHour}{ampm}" : $"{displayHour}:{minute:D2}";
+    }
+
+    // Keep old methods for backward compatibility
     private List<DailyTask> GetTasksAtHour(int hour)
     {
         return ScheduledTasks
@@ -3185,6 +4098,409 @@ Best regards";
 
             await TaskService.CreateTaskAsync(meetingCopy);
             ParticipantsMessage = $"Meeting added to {member.Username}'s calendar";
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    // Appointment Detail Panel methods
+    private async Task OpenAppointmentDetail(DailyTask task)
+    {
+        // Don't allow editing past tasks
+        if (IsTaskInPast(task)) return;
+
+        AppointmentDetailTask = task;
+        AppointmentTitle = task.Title;
+        AppointmentDescription = task.Description ?? "";
+        AppointmentTimeValue = task.ScheduledTime.HasValue ? task.ScheduledTime.Value.ToString(@"hh\:mm") : "";
+        AppointmentDuration = task.DurationMinutes;
+        AppointmentRecurrence = task.RecurrenceType;
+        AppointmentRecurrenceInterval = task.RecurrenceInterval;
+        AppointmentRecurrenceDays = string.IsNullOrEmpty(task.RecurrenceDays) ? new List<string>() : task.RecurrenceDays.Split(',').ToList();
+        AppointmentRecurrenceEndDate = task.RecurrenceEndDate;
+        HasRecurrenceEndDate = task.RecurrenceEndDate.HasValue;
+        NewParticipantName = "";
+        NewParticipantEmail = "";
+        NewParticipantPhone = "";
+        ParticipantsMessage = "";
+        IsSavingAppointment = false;
+
+        // Load recent participants for quick add
+        RecentParticipants = await TaskService.GetRecentParticipantsAsync(10);
+        StateHasChanged();
+    }
+
+    private void CloseAppointmentDetail()
+    {
+        AppointmentDetailTask = null;
+        AppointmentTitle = "";
+        AppointmentDescription = "";
+        AppointmentTimeValue = "";
+        AppointmentDuration = 30;
+        AppointmentRecurrence = RecurrenceType.None;
+        AppointmentRecurrenceInterval = 1;
+        AppointmentRecurrenceDays = new();
+        AppointmentRecurrenceEndDate = null;
+        HasRecurrenceEndDate = false;
+        ParticipantsMessage = "";
+    }
+
+    private async Task SaveAppointmentDetail()
+    {
+        if (AppointmentDetailTask == null || string.IsNullOrWhiteSpace(AppointmentTitle)) return;
+
+        IsSavingAppointment = true;
+        StateHasChanged();
+
+        try
+        {
+            AppointmentDetailTask.Title = AppointmentTitle;
+            AppointmentDetailTask.Description = string.IsNullOrWhiteSpace(AppointmentDescription) ? null : AppointmentDescription;
+            AppointmentDetailTask.DurationMinutes = AppointmentDuration;
+
+            // Parse time if provided
+            if (!string.IsNullOrWhiteSpace(AppointmentTimeValue))
+            {
+                if (TimeSpan.TryParse(AppointmentTimeValue, out var time))
+                {
+                    AppointmentDetailTask.ScheduledTime = time;
+                    AppointmentDetailTask.IsAllDay = false;
+                }
+            }
+
+            // Save recurrence settings
+            AppointmentDetailTask.RecurrenceType = AppointmentRecurrence;
+            AppointmentDetailTask.RecurrenceInterval = AppointmentRecurrenceInterval;
+            AppointmentDetailTask.RecurrenceDays = AppointmentRecurrenceDays.Any() ? string.Join(",", AppointmentRecurrenceDays) : null;
+            AppointmentDetailTask.RecurrenceEndDate = HasRecurrenceEndDate ? AppointmentRecurrenceEndDate : null;
+
+            await TaskService.UpdateTaskAsync(AppointmentDetailTask);
+
+            // Generate recurring instances if recurrence is set
+            if (AppointmentRecurrence != RecurrenceType.None)
+            {
+                await GenerateRecurringInstances(AppointmentDetailTask);
+            }
+
+            await LoadTasksAsync();
+            CloseAppointmentDetail();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error saving: {ex.Message}";
+        }
+        finally
+        {
+            IsSavingAppointment = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteAppointment()
+    {
+        if (AppointmentDetailTask == null) return;
+
+        // Check if this is part of a recurring series
+        var isRecurring = AppointmentDetailTask.RecurrenceType != RecurrenceType.None ||
+                          AppointmentDetailTask.RecurrenceParentId.HasValue;
+
+        if (isRecurring)
+        {
+            // Open the recurring delete dialog
+            await OpenRecurringDeleteDialog(AppointmentDetailTask);
+            return;
+        }
+
+        // Not recurring, delete directly
+        try
+        {
+            await TaskService.DeleteTaskAsync(AppointmentDetailTask.Id, CurrentUserId);
+            await LoadTasksAsync();
+            CloseAppointmentDetail();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error deleting: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task UnscheduleAppointment()
+    {
+        if (AppointmentDetailTask == null) return;
+
+        try
+        {
+            // Remove the scheduled time and set date to yesterday - this puts it in the Waiting list
+            await TaskService.ScheduleTaskTimeAsync(AppointmentDetailTask.Id, null, CurrentUserId);
+            await TaskService.RescheduleTaskAsync(AppointmentDetailTask.Id, LocalToday.AddDays(-1), CurrentUserId);
+            await LoadTasksAsync();
+            CloseAppointmentDetail();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error unscheduling: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private string GetRecurrenceIntervalLabel()
+    {
+        return AppointmentRecurrence switch
+        {
+            RecurrenceType.Daily => AppointmentRecurrenceInterval == 1 ? "day" : "days",
+            RecurrenceType.Weekly => AppointmentRecurrenceInterval == 1 ? "week" : "weeks",
+            RecurrenceType.Monthly => AppointmentRecurrenceInterval == 1 ? "month" : "months",
+            RecurrenceType.Yearly => AppointmentRecurrenceInterval == 1 ? "year" : "years",
+            _ => ""
+        };
+    }
+
+    private void ToggleRecurrenceDay(string day)
+    {
+        if (AppointmentRecurrenceDays.Contains(day))
+            AppointmentRecurrenceDays.Remove(day);
+        else
+            AppointmentRecurrenceDays.Add(day);
+    }
+
+    private async Task OpenRecurringDeleteDialog(DailyTask task)
+    {
+        DeletingRecurringTask = task;
+        RecurringDeleteMode = "this";
+        SelectedInstancesForDeletion.Clear();
+
+        // Find all instances in this recurring series
+        var parentId = task.RecurrenceParentId ?? task.Id;
+
+        // Get all tasks that are part of this series (same parent or is the parent)
+        var allTasks = await TaskService.GetUpcomingTasksAsync(CurrentUserId, 365);
+        RecurringInstances = allTasks
+            .Where(t => t.Id == parentId || t.RecurrenceParentId == parentId)
+            .OrderBy(t => t.TaskDate)
+            .ThenBy(t => t.ScheduledTime)
+            .ToList();
+
+        // Pre-select the current task for deletion
+        SelectedInstancesForDeletion.Add(task.Id);
+
+        ShowRecurringDeleteDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseRecurringDeleteDialog()
+    {
+        ShowRecurringDeleteDialog = false;
+        DeletingRecurringTask = null;
+        RecurringInstances.Clear();
+        SelectedInstancesForDeletion.Clear();
+    }
+
+    private void ToggleInstanceForDeletion(int taskId)
+    {
+        if (SelectedInstancesForDeletion.Contains(taskId))
+            SelectedInstancesForDeletion.Remove(taskId);
+        else
+            SelectedInstancesForDeletion.Add(taskId);
+    }
+
+    private void SelectAllInstancesForDeletion()
+    {
+        SelectedInstancesForDeletion = RecurringInstances.Select(t => t.Id).ToHashSet();
+    }
+
+    private void DeselectAllInstancesForDeletion()
+    {
+        SelectedInstancesForDeletion.Clear();
+    }
+
+    private async Task ConfirmRecurringDelete()
+    {
+        if (DeletingRecurringTask == null) return;
+
+        try
+        {
+            switch (RecurringDeleteMode)
+            {
+                case "this":
+                    // Delete only the current instance
+                    await TaskService.DeleteTaskAsync(DeletingRecurringTask.Id, CurrentUserId);
+                    break;
+
+                case "all":
+                    // Delete all instances in the series
+                    foreach (var instance in RecurringInstances)
+                    {
+                        await TaskService.DeleteTaskAsync(instance.Id, CurrentUserId);
+                    }
+                    break;
+
+                case "select":
+                    // Delete only selected instances
+                    foreach (var taskId in SelectedInstancesForDeletion)
+                    {
+                        await TaskService.DeleteTaskAsync(taskId, CurrentUserId);
+                    }
+                    break;
+            }
+
+            await LoadTasksAsync();
+            CloseRecurringDeleteDialog();
+            CloseAppointmentDetail();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error deleting: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateRecurringInstances(DailyTask parentTask)
+    {
+        // Generate recurring instances for the next 3 months
+        var endDate = parentTask.RecurrenceEndDate ?? DateTime.Today.AddMonths(3);
+        var currentDate = parentTask.TaskDate.AddDays(1); // Start from day after the original
+
+        while (currentDate <= endDate)
+        {
+            bool shouldCreate = false;
+
+            switch (parentTask.RecurrenceType)
+            {
+                case RecurrenceType.Daily:
+                    shouldCreate = (currentDate - parentTask.TaskDate).Days % parentTask.RecurrenceInterval == 0;
+                    break;
+
+                case RecurrenceType.Weekly:
+                    var dayOfWeek = currentDate.DayOfWeek.ToString().Substring(0, 3);
+                    var daysSinceStart = (currentDate - parentTask.TaskDate).Days;
+                    var weeksSinceStart = daysSinceStart / 7;
+                    shouldCreate = weeksSinceStart % parentTask.RecurrenceInterval == 0 &&
+                                   (string.IsNullOrEmpty(parentTask.RecurrenceDays) || parentTask.RecurrenceDays.Contains(dayOfWeek));
+                    break;
+
+                case RecurrenceType.Monthly:
+                    var monthsDiff = ((currentDate.Year - parentTask.TaskDate.Year) * 12) + currentDate.Month - parentTask.TaskDate.Month;
+                    shouldCreate = currentDate.Day == parentTask.TaskDate.Day && monthsDiff % parentTask.RecurrenceInterval == 0;
+                    break;
+
+                case RecurrenceType.Yearly:
+                    var yearsDiff = currentDate.Year - parentTask.TaskDate.Year;
+                    shouldCreate = currentDate.Month == parentTask.TaskDate.Month &&
+                                   currentDate.Day == parentTask.TaskDate.Day &&
+                                   yearsDiff % parentTask.RecurrenceInterval == 0;
+                    break;
+            }
+
+            if (shouldCreate)
+            {
+                // Check if instance already exists for this date
+                var existingTasks = await TaskService.GetTasksForDateAsync(currentDate, CurrentUserId);
+                var alreadyExists = existingTasks.Any(t => t.RecurrenceParentId == parentTask.Id);
+
+                if (!alreadyExists)
+                {
+                    var instance = new DailyTask
+                    {
+                        Title = parentTask.Title,
+                        Description = parentTask.Description,
+                        TaskDate = currentDate,
+                        ScheduledTime = parentTask.ScheduledTime,
+                        DurationMinutes = parentTask.DurationMinutes,
+                        IsAllDay = parentTask.IsAllDay,
+                        UserId = parentTask.UserId,
+                        RecurrenceParentId = parentTask.Id,
+                        RecurrenceType = RecurrenceType.None // Instances don't have their own recurrence
+                    };
+                    await TaskService.CreateTaskAsync(instance);
+                }
+            }
+
+            currentDate = currentDate.AddDays(1);
+        }
+    }
+
+    private async Task AddAppointmentInvitee()
+    {
+        if (AppointmentDetailTask == null || string.IsNullOrWhiteSpace(NewParticipantName)) return;
+
+        try
+        {
+            var participant = await TaskService.CreateParticipantAsync(NewParticipantName, NewParticipantEmail, NewParticipantPhone);
+            await TaskService.AddParticipantToTaskAsync(AppointmentDetailTask.Id, participant.Id, CurrentUserId);
+
+            // Reload the task to get updated participants
+            var updatedTask = await TaskService.GetTaskByIdAsync(AppointmentDetailTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                AppointmentDetailTask = updatedTask;
+            }
+
+            NewParticipantName = "";
+            NewParticipantEmail = "";
+            NewParticipantPhone = "";
+            ParticipantsMessage = $"Added {participant.Name}";
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private async Task HandleAppointmentInviteeKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddAppointmentInvitee();
+        }
+    }
+
+    private async Task AddRecentToAppointment(Participant participant)
+    {
+        if (AppointmentDetailTask == null) return;
+
+        try
+        {
+            await TaskService.AddParticipantToTaskAsync(AppointmentDetailTask.Id, participant.Id, CurrentUserId);
+
+            // Reload the task to get updated participants
+            var updatedTask = await TaskService.GetTaskByIdAsync(AppointmentDetailTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                AppointmentDetailTask = updatedTask;
+            }
+
+            ParticipantsMessage = $"Added {participant.Name}";
+            await LoadTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            ParticipantsMessage = $"Error: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private async Task RemoveAppointmentInvitee(Participant participant)
+    {
+        if (AppointmentDetailTask == null) return;
+
+        try
+        {
+            await TaskService.RemoveParticipantFromTaskAsync(AppointmentDetailTask.Id, participant.Id, CurrentUserId);
+
+            // Reload the task to get updated participants
+            var updatedTask = await TaskService.GetTaskByIdAsync(AppointmentDetailTask.Id, CurrentUserId);
+            if (updatedTask != null)
+            {
+                AppointmentDetailTask = updatedTask;
+            }
+
+            await LoadTasksAsync();
         }
         catch (Exception ex)
         {
