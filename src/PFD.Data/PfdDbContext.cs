@@ -15,6 +15,8 @@ public class PfdDbContext : DbContext
     public DbSet<GroupMember> GroupMembers { get; set; } = null!;
     public DbSet<InsightHistory> InsightHistory { get; set; } = null!;
     public DbSet<PromptTemplate> PromptTemplates { get; set; } = null!;
+    public DbSet<TaskTemplate> TaskTemplates { get; set; } = null!;
+    public DbSet<SubtaskTemplate> SubtaskTemplates { get; set; } = null!;
 
     private bool IsSqlServer => Database.ProviderName?.Contains("SqlServer") == true;
 
@@ -55,7 +57,12 @@ public class PfdDbContext : DbContext
             var columnsToAdd = new Dictionary<string, string>
             {
                 { "ParentTaskId", "INT NULL" },
-                { "GroupId", "INT NULL" }
+                { "GroupId", "INT NULL" },
+                { "RecurrenceType", "INT NOT NULL DEFAULT 0" },
+                { "RecurrenceInterval", "INT NOT NULL DEFAULT 1" },
+                { "RecurrenceDays", "NVARCHAR(50) NULL" },
+                { "RecurrenceEndDate", "DATETIME2 NULL" },
+                { "RecurrenceParentId", "INT NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -142,6 +149,25 @@ public class PfdDbContext : DbContext
             catch (Exception ex)
             {
                 Console.WriteLine($"Warning: Could not add NotificationPreference column: {ex.Message}");
+            }
+
+            // Add Phone column to participants table
+            try
+            {
+                using var addPhoneCmd = connection.CreateCommand();
+                addPhoneCmd.CommandText = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = 'participants' AND COLUMN_NAME = 'Phone'
+                    )
+                    BEGIN
+                        ALTER TABLE participants ADD Phone NVARCHAR(50) NULL;
+                    END";
+                addPhoneCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not add Phone column to participants: {ex.Message}");
             }
 
             // Add personal info columns to users table
@@ -251,6 +277,63 @@ public class PfdDbContext : DbContext
             {
                 Console.WriteLine($"Warning: Could not add UserId column to prompt_templates: {ex.Message}");
             }
+
+            // Create task_templates table if it doesn't exist
+            try
+            {
+                using var createTaskTemplatesCmd = connection.CreateCommand();
+                createTaskTemplatesCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'task_templates')
+                    BEGIN
+                        CREATE TABLE task_templates (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            UserId INT NOT NULL,
+                            Name NVARCHAR(200) NOT NULL,
+                            Description NVARCHAR(500) NULL,
+                            DefaultTaskType INT NOT NULL DEFAULT 0,
+                            DefaultDurationMinutes INT NOT NULL DEFAULT 30,
+                            DefaultIsAllDay BIT NOT NULL DEFAULT 1,
+                            DefaultColor NVARCHAR(20) NULL,
+                            SortOrder INT NOT NULL DEFAULT 0,
+                            IsActive BIT NOT NULL DEFAULT 1,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            UpdatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_task_templates_users FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_task_templates_user ON task_templates(UserId);
+                    END";
+                createTaskTemplatesCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create task_templates table: {ex.Message}");
+            }
+
+            // Create subtask_templates table if it doesn't exist
+            try
+            {
+                using var createSubtaskTemplatesCmd = connection.CreateCommand();
+                createSubtaskTemplatesCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'subtask_templates')
+                    BEGIN
+                        CREATE TABLE subtask_templates (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            TaskTemplateId INT NOT NULL,
+                            Title NVARCHAR(300) NOT NULL,
+                            Description NVARCHAR(500) NULL,
+                            SortOrder INT NOT NULL DEFAULT 0,
+                            DurationMinutes INT NULL,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            CONSTRAINT FK_subtask_templates_task FOREIGN KEY (TaskTemplateId) REFERENCES task_templates(Id) ON DELETE CASCADE
+                        );
+                        CREATE INDEX IX_subtask_templates_task ON subtask_templates(TaskTemplateId);
+                    END";
+                createSubtaskTemplatesCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create subtask_templates table: {ex.Message}");
+            }
         }
         finally
         {
@@ -299,7 +382,12 @@ public class PfdDbContext : DbContext
                 { "IsAllDay", "INTEGER NOT NULL DEFAULT 1" },
                 { "UserId", "INTEGER NOT NULL DEFAULT 0" },
                 { "ParentTaskId", "INTEGER NULL" },
-                { "GroupId", "INTEGER NULL" }
+                { "GroupId", "INTEGER NULL" },
+                { "RecurrenceType", "INTEGER NOT NULL DEFAULT 0" },
+                { "RecurrenceInterval", "INTEGER NOT NULL DEFAULT 1" },
+                { "RecurrenceDays", "TEXT NULL" },
+                { "RecurrenceEndDate", "TEXT NULL" },
+                { "RecurrenceParentId", "INTEGER NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -407,6 +495,20 @@ public class PfdDbContext : DbContext
                 addNotifCmd.ExecuteNonQuery();
             }
 
+            // Add Phone column to participants table
+            try
+            {
+                using var checkPhoneCmd = connection.CreateCommand();
+                checkPhoneCmd.CommandText = "SELECT Phone FROM participants LIMIT 1";
+                checkPhoneCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var addPhoneCmd = connection.CreateCommand();
+                addPhoneCmd.CommandText = "ALTER TABLE participants ADD COLUMN Phone TEXT NULL";
+                addPhoneCmd.ExecuteNonQuery();
+            }
+
             // Add personal info columns to users table
             var userColumns = new[] { "Email", "Phone", "Address" };
             foreach (var column in userColumns)
@@ -480,6 +582,67 @@ public class PfdDbContext : DbContext
                         UpdatedAt TEXT NOT NULL DEFAULT (datetime('now'))
                     )";
                 createTemplateCmd.ExecuteNonQuery();
+            }
+
+            // Create task_templates table if it doesn't exist
+            try
+            {
+                using var checkTaskTemplatesCmd = connection.CreateCommand();
+                checkTaskTemplatesCmd.CommandText = "SELECT Id FROM task_templates LIMIT 1";
+                checkTaskTemplatesCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createTaskTemplatesCmd = connection.CreateCommand();
+                createTaskTemplatesCmd.CommandText = @"
+                    CREATE TABLE task_templates (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        Name TEXT NOT NULL,
+                        Description TEXT NULL,
+                        DefaultTaskType INTEGER NOT NULL DEFAULT 0,
+                        DefaultDurationMinutes INTEGER NOT NULL DEFAULT 30,
+                        DefaultIsAllDay INTEGER NOT NULL DEFAULT 1,
+                        DefaultColor TEXT NULL,
+                        SortOrder INTEGER NOT NULL DEFAULT 0,
+                        IsActive INTEGER NOT NULL DEFAULT 1,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        UpdatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE
+                    )";
+                createTaskTemplatesCmd.ExecuteNonQuery();
+
+                using var createTaskTemplatesIndexCmd = connection.CreateCommand();
+                createTaskTemplatesIndexCmd.CommandText = "CREATE INDEX IX_task_templates_user ON task_templates(UserId)";
+                createTaskTemplatesIndexCmd.ExecuteNonQuery();
+            }
+
+            // Create subtask_templates table if it doesn't exist
+            try
+            {
+                using var checkSubtaskTemplatesCmd = connection.CreateCommand();
+                checkSubtaskTemplatesCmd.CommandText = "SELECT Id FROM subtask_templates LIMIT 1";
+                checkSubtaskTemplatesCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createSubtaskTemplatesCmd = connection.CreateCommand();
+                createSubtaskTemplatesCmd.CommandText = @"
+                    CREATE TABLE subtask_templates (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        TaskTemplateId INTEGER NOT NULL,
+                        Title TEXT NOT NULL,
+                        Description TEXT NULL,
+                        SortOrder INTEGER NOT NULL DEFAULT 0,
+                        DurationMinutes INTEGER NULL,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        FOREIGN KEY (TaskTemplateId) REFERENCES task_templates(Id) ON DELETE CASCADE
+                    )";
+                createSubtaskTemplatesCmd.ExecuteNonQuery();
+
+                using var createSubtaskTemplatesIndexCmd = connection.CreateCommand();
+                createSubtaskTemplatesIndexCmd.CommandText = "CREATE INDEX IX_subtask_templates_task ON subtask_templates(TaskTemplateId)";
+                createSubtaskTemplatesIndexCmd.ExecuteNonQuery();
             }
         }
         finally
@@ -657,6 +820,37 @@ public class PfdDbContext : DbContext
                 .HasDefaultValueSql(defaultDateSql);
 
             entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+        });
+
+        // TaskTemplate configuration
+        modelBuilder.Entity<TaskTemplate>(entity =>
+        {
+            entity.HasIndex(e => e.UserId);
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+
+            entity.HasOne(t => t.User)
+                .WithMany()
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(t => t.SubtaskTemplates)
+                .WithOne(st => st.TaskTemplate)
+                .HasForeignKey(st => st.TaskTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // SubtaskTemplate configuration
+        modelBuilder.Entity<SubtaskTemplate>(entity =>
+        {
+            entity.HasIndex(e => e.TaskTemplateId);
+
+            entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql(defaultDateSql);
         });
     }

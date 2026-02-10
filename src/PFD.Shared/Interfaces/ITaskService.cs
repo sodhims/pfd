@@ -16,6 +16,7 @@ public interface ITaskService
     Task ScheduleTaskTimeAsync(int taskId, TimeSpan? time, int userId, int durationMinutes = 30);
     Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30);
     Task<List<DailyTask>> GetUpcomingTasksAsync(int userId, int days = 14);
+    Task<List<DailyTask>> GetUnscheduledTasksAsync(int userId);
 
     // Participant management
     Task<List<Participant>> GetAllParticipantsAsync();

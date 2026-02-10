@@ -9,16 +9,17 @@ namespace PFD.Services;
 
 public class AuthService : IAuthService
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
-    public AuthService(PfdDbContext context)
+    public AuthService(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public async Task<User?> LoginAsync(string username, string password)
     {
-        var user = await _context.Users
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users
             .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
 
         if (user == null)
@@ -28,14 +29,15 @@ public class AuthService : IAuthService
             return null;
 
         user.LastLoginAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
 
         return user;
     }
 
     public async Task<User?> RegisterAsync(string username, string password, string? displayName = null)
     {
-        if (await UsernameExistsAsync(username))
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        if (await context.Users.AnyAsync(u => u.Username.ToLower() == username.ToLower()))
             return null;
 
         var user = new User
@@ -47,38 +49,42 @@ public class AuthService : IAuthService
             LastLoginAt = DateTime.UtcNow
         };
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
 
         return user;
     }
 
     public async Task<bool> UsernameExistsAsync(string username)
     {
-        return await _context.Users
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users
             .AnyAsync(u => u.Username.ToLower() == username.ToLower());
     }
 
     public async Task<User?> GetUserByIdAsync(int userId)
     {
-        return await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.FindAsync(userId);
     }
 
     public async Task UpdateUserSettingsAsync(int userId, string theme, bool isDailyView, bool useLargeText)
     {
-        var user = await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users.FindAsync(userId);
         if (user != null)
         {
             user.Theme = theme;
             user.IsDailyView = isDailyView;
             user.UseLargeText = useLargeText;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task UpdateUserProfileAsync(int userId, string? email, string? phone, string? address, string? displayName)
     {
-        var user = await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users.FindAsync(userId);
         if (user != null)
         {
             user.Email = email;
@@ -86,46 +92,50 @@ public class AuthService : IAuthService
             user.Address = address;
             if (!string.IsNullOrWhiteSpace(displayName))
                 user.DisplayName = displayName;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task UpdateLastLoginAsync(int userId)
     {
-        var user = await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users.FindAsync(userId);
         if (user != null)
         {
             user.LastLoginAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task<List<User>> GetAllUsersAsync()
     {
-        return await _context.Users
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users
             .OrderBy(u => u.Id)
             .ToListAsync();
     }
 
     public async Task<bool> ResetPasswordAsync(int userId, string newPassword)
     {
-        var user = await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users.FindAsync(userId);
         if (user == null)
             return false;
 
         user.PasswordHash = HashPassword(newPassword);
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> DeleteUserAsync(int userId)
     {
-        var user = await _context.Users.FindAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var user = await context.Users.FindAsync(userId);
         if (user == null)
             return false;
 
-        _context.Users.Remove(user);
-        await _context.SaveChangesAsync();
+        context.Users.Remove(user);
+        await context.SaveChangesAsync();
         return true;
     }
 
@@ -137,10 +147,11 @@ public class AuthService : IAuthService
 
     public async Task<AdminStats> GetAdminStatsAsync()
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         var stats = new AdminStats();
 
         // User counts
-        var users = await _context.Users.ToListAsync();
+        var users = await context.Users.ToListAsync();
         stats.TotalUsers = users.Count;
         stats.ActiveUsersLast7Days = users.Count(u => u.LastLoginAt >= DateTime.UtcNow.AddDays(-7));
 
@@ -150,7 +161,7 @@ public class AuthService : IAuthService
             .ToDictionary(g => g.Key, g => g.Count());
 
         // Task counts
-        var tasks = await _context.DailyTasks.ToListAsync();
+        var tasks = await context.DailyTasks.ToListAsync();
         stats.TotalTasks = tasks.Count;
         stats.CompletedTasks = tasks.Count(t => t.IsCompleted);
 

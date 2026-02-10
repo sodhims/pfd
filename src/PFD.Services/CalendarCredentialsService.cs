@@ -7,16 +7,17 @@ namespace PFD.Services;
 
 public class CalendarCredentialsService : ICalendarCredentialsService
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
-    public CalendarCredentialsService(PfdDbContext context)
+    public CalendarCredentialsService(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public async Task<CalendarCredentialsDto?> GetCredentialsAsync(int userId, string provider)
     {
-        var creds = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var creds = await context.CalendarCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Provider == provider);
 
         if (creds == null) return null;
@@ -26,7 +27,8 @@ public class CalendarCredentialsService : ICalendarCredentialsService
 
     public async Task<List<CalendarCredentialsDto>> GetAllCredentialsAsync(int userId)
     {
-        var creds = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var creds = await context.CalendarCredentials
             .Where(c => c.UserId == userId)
             .ToListAsync();
 
@@ -35,7 +37,8 @@ public class CalendarCredentialsService : ICalendarCredentialsService
 
     public async Task SaveCredentialsAsync(int userId, CalendarCredentialsDto dto)
     {
-        var existing = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var existing = await context.CalendarCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Provider == dto.Provider);
 
         if (existing != null)
@@ -60,27 +63,29 @@ public class CalendarCredentialsService : ICalendarCredentialsService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            _context.CalendarCredentials.Add(creds);
+            context.CalendarCredentials.Add(creds);
         }
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task DeleteCredentialsAsync(int userId, string provider)
     {
-        var creds = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var creds = await context.CalendarCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Provider == provider);
 
         if (creds != null)
         {
-            _context.CalendarCredentials.Remove(creds);
-            await _context.SaveChangesAsync();
+            context.CalendarCredentials.Remove(creds);
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task UpdateTokensAsync(int userId, string provider, string accessToken, string? refreshToken, DateTime? expiry)
     {
-        var creds = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var creds = await context.CalendarCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Provider == provider);
 
         if (creds != null)
@@ -91,13 +96,14 @@ public class CalendarCredentialsService : ICalendarCredentialsService
             creds.TokenExpiry = expiry;
             creds.IsConnected = true;
             creds.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task SetConnectedAsync(int userId, string provider, bool isConnected)
     {
-        var creds = await _context.CalendarCredentials
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var creds = await context.CalendarCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId && c.Provider == provider);
 
         if (creds != null)
@@ -110,7 +116,7 @@ public class CalendarCredentialsService : ICalendarCredentialsService
                 creds.TokenExpiry = null;
             }
             creds.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 

@@ -8,21 +8,22 @@ namespace PFD.Services;
 
 public class InsightHistoryService : IInsightHistoryService
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
     };
 
-    public InsightHistoryService(PfdDbContext context)
+    public InsightHistoryService(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public async Task<InsightHistory?> GetLatestInsightAsync(int userId, string insightType)
     {
-        return await _context.Set<InsightHistory>()
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Set<InsightHistory>()
             .Where(h => h.UserId == userId && h.InsightType == insightType)
             .OrderByDescending(h => h.CreatedAt)
             .FirstOrDefaultAsync();
@@ -31,7 +32,8 @@ public class InsightHistoryService : IInsightHistoryService
     public async Task<List<InsightHistory>> GetInsightHistoryAsync(int userId, string insightType,
         DateTime? from = null, DateTime? to = null, int limit = 10)
     {
-        var query = _context.Set<InsightHistory>()
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var query = context.Set<InsightHistory>()
             .Where(h => h.UserId == userId && h.InsightType == insightType);
 
         if (from.HasValue)
@@ -49,6 +51,7 @@ public class InsightHistoryService : IInsightHistoryService
         DateTime periodStart, DateTime periodEnd, TaskDataSnapshot rawData,
         string? aiInsight, string? aiSuggestions, int? promptTemplateId = null, string? aiModel = null)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         var history = new InsightHistory
         {
             UserId = userId,
@@ -63,15 +66,16 @@ public class InsightHistoryService : IInsightHistoryService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Set<InsightHistory>().Add(history);
-        await _context.SaveChangesAsync();
+        context.Set<InsightHistory>().Add(history);
+        await context.SaveChangesAsync();
 
         return history;
     }
 
     public async Task<TaskDataSnapshot> GenerateSnapshotAsync(int userId, DateTime periodStart, DateTime periodEnd)
     {
-        var tasks = await _context.DailyTasks
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var tasks = await context.DailyTasks
             .Where(t => t.UserId == userId && t.TaskDate >= periodStart && t.TaskDate <= periodEnd)
             .ToListAsync();
 
@@ -116,8 +120,8 @@ public class InsightHistoryService : IInsightHistoryService
         snapshot.MeetingsCompleted = tasks.Count(t => t.TaskType == Shared.Enums.TaskType.Meeting && t.IsCompleted);
 
         // Calculate streaks
-        snapshot.CurrentStreak = await CalculateCurrentStreakAsync(userId);
-        snapshot.LongestStreak = await CalculateLongestStreakAsync(userId);
+        snapshot.CurrentStreak = await CalculateCurrentStreakAsync(context, userId);
+        snapshot.LongestStreak = await CalculateLongestStreakAsync(context, userId);
 
         return snapshot;
     }
@@ -190,7 +194,7 @@ public class InsightHistoryService : IInsightHistoryService
                string.Join("\n", comparisons.Select(c => $"- {c}"));
     }
 
-    private async Task<int> CalculateCurrentStreakAsync(int userId)
+    private static async Task<int> CalculateCurrentStreakAsync(PfdDbContext context, int userId)
     {
         var today = DateTime.UtcNow.Date;
         var streak = 0;
@@ -198,7 +202,7 @@ public class InsightHistoryService : IInsightHistoryService
 
         while (true)
         {
-            var tasksForDay = await _context.DailyTasks
+            var tasksForDay = await context.DailyTasks
                 .Where(t => t.UserId == userId && t.TaskDate.Date == currentDate)
                 .ToListAsync();
 
@@ -227,9 +231,9 @@ public class InsightHistoryService : IInsightHistoryService
         return streak;
     }
 
-    private async Task<int> CalculateLongestStreakAsync(int userId)
+    private static async Task<int> CalculateLongestStreakAsync(PfdDbContext context, int userId)
     {
-        var tasks = await _context.DailyTasks
+        var tasks = await context.DailyTasks
             .Where(t => t.UserId == userId)
             .OrderBy(t => t.TaskDate)
             .ToListAsync();
@@ -264,16 +268,17 @@ public class InsightHistoryService : IInsightHistoryService
 
     public async Task CleanupOldInsightsAsync(int userId, int retentionDays = 90)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
 
-        var oldInsights = await _context.Set<InsightHistory>()
+        var oldInsights = await context.Set<InsightHistory>()
             .Where(h => h.UserId == userId && h.CreatedAt < cutoff)
             .ToListAsync();
 
         if (oldInsights.Any())
         {
-            _context.Set<InsightHistory>().RemoveRange(oldInsights);
-            await _context.SaveChangesAsync();
+            context.Set<InsightHistory>().RemoveRange(oldInsights);
+            await context.SaveChangesAsync();
         }
     }
 }

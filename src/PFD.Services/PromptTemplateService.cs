@@ -7,7 +7,7 @@ namespace PFD.Services;
 
 public class PromptTemplateService : IPromptTemplateService
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
     // Built-in default templates
     private static readonly Dictionary<PromptCategory, PromptTemplate> _builtInTemplates = new()
@@ -159,16 +159,17 @@ Respond with ONLY valid JSON:
         }
     };
 
-    public PromptTemplateService(PfdDbContext context)
+    public PromptTemplateService(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public Dictionary<PromptCategory, PromptTemplate> GetBuiltInTemplates() => _builtInTemplates;
 
     public async Task<List<PromptTemplate>> GetTemplatesAsync(PromptCategory category)
     {
-        var dbTemplates = await _context.Set<PromptTemplate>()
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var dbTemplates = await context.Set<PromptTemplate>()
             .Where(t => t.Category == category)
             .OrderByDescending(t => t.IsBuiltIn)
             .ThenBy(t => t.Name)
@@ -185,8 +186,9 @@ Respond with ONLY valid JSON:
 
     public async Task<PromptTemplate> GetActiveTemplateAsync(PromptCategory category)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         // Check for user-set active template
-        var activeTemplate = await _context.Set<PromptTemplate>()
+        var activeTemplate = await context.Set<PromptTemplate>()
             .Where(t => t.Category == category && t.IsActive)
             .FirstOrDefaultAsync();
 
@@ -199,11 +201,12 @@ Respond with ONLY valid JSON:
 
     public async Task SetActiveTemplateAsync(int templateId)
     {
-        var template = await _context.Set<PromptTemplate>().FindAsync(templateId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var template = await context.Set<PromptTemplate>().FindAsync(templateId);
         if (template == null) return;
 
         // Deactivate all other templates in this category
-        var otherTemplates = await _context.Set<PromptTemplate>()
+        var otherTemplates = await context.Set<PromptTemplate>()
             .Where(t => t.Category == template.Category && t.Id != templateId)
             .ToListAsync();
 
@@ -213,24 +216,26 @@ Respond with ONLY valid JSON:
         }
 
         template.IsActive = true;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task<PromptTemplate> CreateTemplateAsync(PromptTemplate template)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         template.IsBuiltIn = false;
         template.CreatedAt = DateTime.UtcNow;
         template.UpdatedAt = DateTime.UtcNow;
 
-        _context.Set<PromptTemplate>().Add(template);
-        await _context.SaveChangesAsync();
+        context.Set<PromptTemplate>().Add(template);
+        await context.SaveChangesAsync();
 
         return template;
     }
 
     public async Task UpdateTemplateAsync(PromptTemplate template)
     {
-        var existing = await _context.Set<PromptTemplate>().FindAsync(template.Id);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var existing = await context.Set<PromptTemplate>().FindAsync(template.Id);
         if (existing == null || existing.IsBuiltIn) return;
 
         existing.Name = template.Name;
@@ -238,23 +243,25 @@ Respond with ONLY valid JSON:
         existing.Description = template.Description;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task<bool> DeleteTemplateAsync(int templateId)
     {
-        var template = await _context.Set<PromptTemplate>().FindAsync(templateId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var template = await context.Set<PromptTemplate>().FindAsync(templateId);
         if (template == null || template.IsBuiltIn) return false;
 
-        _context.Set<PromptTemplate>().Remove(template);
-        await _context.SaveChangesAsync();
+        context.Set<PromptTemplate>().Remove(template);
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task ResetToDefaultAsync(PromptCategory category)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         // Deactivate all custom templates in this category
-        var templates = await _context.Set<PromptTemplate>()
+        var templates = await context.Set<PromptTemplate>()
             .Where(t => t.Category == category)
             .ToListAsync();
 
@@ -263,6 +270,6 @@ Respond with ONLY valid JSON:
             t.IsActive = false;
         }
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 }

@@ -5,16 +5,17 @@ namespace PFD.Data.Repositories;
 
 public class ParticipantRepository
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
-    public ParticipantRepository(PfdDbContext context)
+    public ParticipantRepository(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public async Task<List<Participant>> GetAllAsync()
     {
-        return await _context.Participants
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Participants
             .OrderByDescending(p => p.MeetingCount)
             .ThenBy(p => p.Name)
             .ToListAsync();
@@ -22,9 +23,10 @@ public class ParticipantRepository
 
     public async Task<List<Participant>> GetFrequentParticipantsAsync(int days = 30, int limit = 10)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         var cutoffDate = DateTime.UtcNow.AddDays(-days);
 
-        return await _context.Participants
+        return await context.Participants
             .Where(p => p.LastMeetingDate >= cutoffDate || p.MeetingCount > 0)
             .OrderByDescending(p => p.MeetingCount)
             .ThenByDescending(p => p.LastMeetingDate)
@@ -34,13 +36,17 @@ public class ParticipantRepository
 
     public async Task<Participant?> GetByNameAsync(string name)
     {
-        return await _context.Participants
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Participants
             .FirstOrDefaultAsync(p => p.Name.ToLower() == name.ToLower());
     }
 
     public async Task<Participant> GetOrCreateAsync(string name, string? email = null)
     {
-        var participant = await GetByNameAsync(name);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var participant = await context.Participants
+            .FirstOrDefaultAsync(p => p.Name.ToLower() == name.ToLower());
+
         if (participant == null)
         {
             participant = new Participant
@@ -50,20 +56,21 @@ public class ParticipantRepository
                 MeetingCount = 0,
                 CreatedAt = DateTime.UtcNow
             };
-            _context.Participants.Add(participant);
-            await _context.SaveChangesAsync();
+            context.Participants.Add(participant);
+            await context.SaveChangesAsync();
         }
         return participant;
     }
 
     public async Task IncrementMeetingCountAsync(int participantId)
     {
-        var participant = await _context.Participants.FindAsync(participantId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var participant = await context.Participants.FindAsync(participantId);
         if (participant != null)
         {
             participant.MeetingCount++;
             participant.LastMeetingDate = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 }

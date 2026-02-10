@@ -5,19 +5,19 @@ namespace PFD.Data.Repositories;
 
 public class TaskRepository
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
-    public TaskRepository(PfdDbContext context)
+    public TaskRepository(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     /// <summary>
     /// Get the group IDs that a user belongs to (for including shared tasks in queries)
     /// </summary>
-    private async Task<List<int>> GetUserGroupIdsAsync(int userId)
+    private async Task<List<int>> GetUserGroupIdsAsync(PfdDbContext context, int userId)
     {
-        return await _context.GroupMembers
+        return await context.GroupMembers
             .Where(gm => gm.UserId == userId)
             .Select(gm => gm.GroupId)
             .ToListAsync();
@@ -25,16 +25,18 @@ public class TaskRepository
 
     public async Task<List<DailyTask>> GetTasksForDateAsync(DateTime date, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
         // Fetch data first, then order client-side (SQLite doesn't support TimeSpan in ORDER BY)
-        var tasks = await _context.DailyTasks
+        var tasks = await context.DailyTasks
             .Where(t => t.TaskDate.Date == date.Date &&
                         t.ParentTaskId == null &&
                         (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
             .Include(t => t.Group)
+            .Include(t => t.Subtasks)
             .ToListAsync();
 
         return tasks
@@ -47,15 +49,18 @@ public class TaskRepository
 
     public async Task<List<DailyTask>> GetTasksForDateRangeAsync(DateTime startDate, DateTime endDate, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
         // Fetch data first, then order client-side (SQLite doesn't support TimeSpan in ORDER BY)
-        var tasks = await _context.DailyTasks
+        var tasks = await context.DailyTasks
             .Where(t => t.TaskDate.Date >= startDate.Date && t.TaskDate.Date <= endDate.Date &&
+                        t.ParentTaskId == null &&
                         (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
             .Include(t => t.Group)
+            .Include(t => t.Subtasks)
             .ToListAsync();
 
         return tasks
@@ -69,9 +74,10 @@ public class TaskRepository
 
     public async Task<List<DailyTask>> GetOverdueTasksAsync(DateTime beforeDate, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        return await _context.DailyTasks
+        return await context.DailyTasks
             .Where(t => t.TaskDate.Date < beforeDate.Date && !t.IsCompleted &&
                         (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderBy(t => t.TaskDate)
@@ -84,9 +90,10 @@ public class TaskRepository
 
     public async Task<DailyTask?> GetByIdAsync(int id, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        return await _context.DailyTasks
+        return await context.DailyTasks
             .Include(t => t.Participants)
                 .ThenInclude(tp => tp.Participant)
             .Include(t => t.Group)
@@ -96,41 +103,45 @@ public class TaskRepository
 
     public async Task<DailyTask> CreateAsync(DailyTask task)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         task.CreatedAt = DateTime.UtcNow;
         task.UpdatedAt = DateTime.UtcNow;
 
-        _context.DailyTasks.Add(task);
-        await _context.SaveChangesAsync();
+        context.DailyTasks.Add(task);
+        await context.SaveChangesAsync();
         return task;
     }
 
     public async Task<DailyTask> UpdateAsync(DailyTask task)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         task.UpdatedAt = DateTime.UtcNow;
-        _context.DailyTasks.Update(task);
-        await _context.SaveChangesAsync();
+        context.DailyTasks.Update(task);
+        await context.SaveChangesAsync();
         return task;
     }
 
     public async Task DeleteAsync(int id, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        var task = await _context.DailyTasks
+        var task = await context.DailyTasks
             .FirstOrDefaultAsync(t => t.Id == id &&
                 (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
         if (task != null)
         {
-            _context.DailyTasks.Remove(task);
-            await _context.SaveChangesAsync();
+            context.DailyTasks.Remove(task);
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task<DailyTask?> ToggleCompletionAsync(int id, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        var task = await _context.DailyTasks
+        var task = await context.DailyTasks
             .FirstOrDefaultAsync(t => t.Id == id &&
                 (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
         if (task != null)
@@ -138,17 +149,18 @@ public class TaskRepository
             task.IsCompleted = !task.IsCompleted;
             task.CompletedAt = task.IsCompleted ? DateTime.UtcNow : null;
             task.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
         return task;
     }
 
     public async Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
         var startDate = DateTime.Today.AddDays(-days);
 
-        return await _context.DailyTasks
+        return await context.DailyTasks
             .Where(t => t.TaskDate.Date >= startDate &&
                         (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderByDescending(t => t.TaskDate)
@@ -161,10 +173,11 @@ public class TaskRepository
 
     public async Task<List<DailyTask>> GetUpcomingTasksAsync(int userId, int days = 14)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
         var endDate = DateTime.Today.AddDays(days);
 
-        return await _context.DailyTasks
+        return await context.DailyTasks
             .Where(t => t.TaskDate.Date >= DateTime.Today && t.TaskDate.Date <= endDate && !t.IsCompleted &&
                         (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
             .OrderBy(t => t.TaskDate)
@@ -175,17 +188,42 @@ public class TaskRepository
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Get all unscheduled tasks (tasks without a scheduled time, not completed, for today or future dates)
+    /// </summary>
+    public async Task<List<DailyTask>> GetUnscheduledTasksAsync(int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
+
+        return await context.DailyTasks
+            .Where(t => t.TaskDate.Date >= DateTime.Today &&
+                        !t.IsCompleted &&
+                        !t.ScheduledTime.HasValue &&
+                        t.ParentTaskId == null &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
+            .OrderBy(t => t.TaskDate)
+            .ThenBy(t => t.SortOrder)
+            .ThenBy(t => t.CreatedAt)
+            .Include(t => t.Participants)
+                .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
+            .ToListAsync();
+    }
+
     // Participant management methods
     public async Task<List<Participant>> GetAllParticipantsAsync()
     {
-        return await _context.Participants
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Participants
             .OrderBy(p => p.Name)
             .ToListAsync();
     }
 
     public async Task<List<Participant>> GetRecentParticipantsAsync(int limit = 10)
     {
-        return await _context.Participants
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Participants
             .OrderByDescending(p => p.LastMeetingDate ?? DateTime.MinValue)
             .ThenByDescending(p => p.MeetingCount)
             .Take(limit)
@@ -194,8 +232,9 @@ public class TaskRepository
 
     public async Task<Participant> CreateParticipantAsync(string name, string? email = null, string? phone = null)
     {
+        await using var context = await _contextFactory.CreateDbContextAsync();
         // Check if participant already exists
-        var existing = await _context.Participants
+        var existing = await context.Participants
             .FirstOrDefaultAsync(p => p.Name == name || (email != null && p.Email == email));
 
         if (existing != null)
@@ -204,7 +243,7 @@ public class TaskRepository
             if (!string.IsNullOrEmpty(phone) && string.IsNullOrEmpty(existing.Phone))
             {
                 existing.Phone = phone;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
             }
             return existing;
         }
@@ -217,16 +256,17 @@ public class TaskRepository
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.Participants.Add(participant);
-        await _context.SaveChangesAsync();
+        context.Participants.Add(participant);
+        await context.SaveChangesAsync();
         return participant;
     }
 
     public async Task AddParticipantToTaskAsync(int taskId, int participantId, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        var task = await _context.DailyTasks
+        var task = await context.DailyTasks
             .Include(t => t.Participants)
             .FirstOrDefaultAsync(t => t.Id == taskId &&
                 (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
@@ -244,42 +284,44 @@ public class TaskRepository
             IsSuggested = false
         };
 
-        _context.Set<TaskParticipant>().Add(taskParticipant);
+        context.Set<TaskParticipant>().Add(taskParticipant);
 
         // Update participant's meeting count and last meeting date
-        var participant = await _context.Participants.FindAsync(participantId);
+        var participant = await context.Participants.FindAsync(participantId);
         if (participant != null)
         {
             participant.MeetingCount++;
             participant.LastMeetingDate = DateTime.UtcNow;
         }
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task RemoveParticipantFromTaskAsync(int taskId, int participantId, int userId)
     {
-        var userGroupIds = await GetUserGroupIdsAsync(userId);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
 
-        var task = await _context.DailyTasks
+        var task = await context.DailyTasks
             .FirstOrDefaultAsync(t => t.Id == taskId &&
                 (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
 
         if (task == null) return;
 
-        var taskParticipant = await _context.Set<TaskParticipant>()
+        var taskParticipant = await context.Set<TaskParticipant>()
             .FirstOrDefaultAsync(tp => tp.TaskId == taskId && tp.ParticipantId == participantId);
 
         if (taskParticipant != null)
         {
-            _context.Set<TaskParticipant>().Remove(taskParticipant);
-            await _context.SaveChangesAsync();
+            context.Set<TaskParticipant>().Remove(taskParticipant);
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task<List<Participant>> GetTaskParticipantsAsync(int taskId)
     {
-        return await _context.Set<TaskParticipant>()
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Set<TaskParticipant>()
             .Where(tp => tp.TaskId == taskId)
             .Select(tp => tp.Participant)
             .ToListAsync();

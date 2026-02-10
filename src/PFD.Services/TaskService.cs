@@ -86,6 +86,11 @@ public class TaskService : ITaskService
         return await _taskRepository.GetUpcomingTasksAsync(userId, days);
     }
 
+    public async Task<List<DailyTask>> GetUnscheduledTasksAsync(int userId)
+    {
+        return await _taskRepository.GetUnscheduledTasksAsync(userId);
+    }
+
     // Participant management
     public async Task<List<Participant>> GetAllParticipantsAsync()
     {

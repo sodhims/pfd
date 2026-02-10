@@ -14,28 +14,27 @@ builder.Services.AddRazorComponents()
 // Add API controllers
 builder.Services.AddControllers();
 
-// Database - Use Azure SQL if connection string provided, otherwise local SQLite
+// Database - Use Azure SQL if available, otherwise local SQLite
+// Use IDbContextFactory for Blazor Server to avoid DbContext concurrency issues
 var azureSqlConnection = builder.Configuration.GetConnectionString("AzureSql");
+
 if (!string.IsNullOrEmpty(azureSqlConnection))
 {
-    // Azure SQL Database - use Transient lifetime to avoid concurrency issues in Blazor Server
-    builder.Services.AddDbContext<PfdDbContext>(options =>
+    // Use Azure SQL directly
+    builder.Services.AddDbContextFactory<PfdDbContext>(options =>
         options.UseSqlServer(azureSqlConnection, sqlOptions =>
         {
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null);
+            sqlOptions.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null);
             sqlOptions.CommandTimeout(60);
-        }), ServiceLifetime.Transient);
+        }));
     Console.WriteLine("Using Azure SQL Database");
 }
 else
 {
-    // Local SQLite fallback - use Transient lifetime
+    // Fall back to local SQLite
     var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PFD", "pfd.db");
     Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-    builder.Services.AddDbContext<PfdDbContext>(options => options.UseSqlite($"Data Source={dbPath}"), ServiceLifetime.Transient);
+    builder.Services.AddDbContextFactory<PfdDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
     Console.WriteLine($"Using local SQLite: {dbPath}");
 }
 
@@ -48,9 +47,10 @@ builder.Services.AddScoped<IOllamaService, OllamaService>();
 builder.Services.AddTransient<IAuthService, AuthService>();
 builder.Services.AddTransient<ICalendarCredentialsService, CalendarCredentialsService>();
 
-// Prompt Templates and Insight History Services
+// Prompt Templates, Insight History, and Task Templates Services
 builder.Services.AddTransient<IPromptTemplateService, PromptTemplateService>();
 builder.Services.AddTransient<IInsightHistoryService, InsightHistoryService>();
+builder.Services.AddTransient<ITaskTemplateService, TaskTemplateService>();
 
 // Analysis Service with history and templates
 builder.Services.AddScoped<IAnalysisService>(sp =>

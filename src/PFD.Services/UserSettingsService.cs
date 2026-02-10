@@ -7,16 +7,17 @@ namespace PFD.Services;
 
 public class UserSettingsService : IUserSettingsService
 {
-    private readonly PfdDbContext _context;
+    private readonly IDbContextFactory<PfdDbContext> _contextFactory;
 
-    public UserSettingsService(PfdDbContext context)
+    public UserSettingsService(IDbContextFactory<PfdDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
     public async Task<UserSettings> GetSettingsAsync(string deviceId)
     {
-        var settings = await _context.UserSettings
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var settings = await context.UserSettings
             .FirstOrDefaultAsync(s => s.DeviceId == deviceId);
 
         if (settings == null)
@@ -27,8 +28,8 @@ public class UserSettingsService : IUserSettingsService
                 Theme = "teal",
                 IsDailyView = true
             };
-            _context.UserSettings.Add(settings);
-            await _context.SaveChangesAsync();
+            context.UserSettings.Add(settings);
+            await context.SaveChangesAsync();
         }
 
         return settings;
@@ -36,7 +37,8 @@ public class UserSettingsService : IUserSettingsService
 
     public async Task SaveSettingsAsync(string deviceId, string theme, bool isDailyView, bool useLargeText)
     {
-        var settings = await _context.UserSettings
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var settings = await context.UserSettings
             .FirstOrDefaultAsync(s => s.DeviceId == deviceId);
 
         if (settings == null)
@@ -48,7 +50,7 @@ public class UserSettingsService : IUserSettingsService
                 IsDailyView = isDailyView,
                 UseLargeText = useLargeText
             };
-            _context.UserSettings.Add(settings);
+            context.UserSettings.Add(settings);
         }
         else
         {
@@ -58,7 +60,7 @@ public class UserSettingsService : IUserSettingsService
             settings.UpdatedAt = DateTime.UtcNow;
         }
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 
     public async Task<string> GetThemeAsync(string deviceId)
@@ -69,7 +71,8 @@ public class UserSettingsService : IUserSettingsService
 
     public async Task SetThemeAsync(string deviceId, string theme)
     {
-        var settings = await _context.UserSettings
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var settings = await context.UserSettings
             .FirstOrDefaultAsync(s => s.DeviceId == deviceId);
 
         if (settings == null)
@@ -79,7 +82,7 @@ public class UserSettingsService : IUserSettingsService
                 DeviceId = deviceId,
                 Theme = theme
             };
-            _context.UserSettings.Add(settings);
+            context.UserSettings.Add(settings);
         }
         else
         {
@@ -87,6 +90,6 @@ public class UserSettingsService : IUserSettingsService
             settings.UpdatedAt = DateTime.UtcNow;
         }
 
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
     }
 }

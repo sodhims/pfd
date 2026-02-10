@@ -99,6 +99,32 @@ public class DailyTask
     [MaxLength(20)]
     public string? CustomColor { get; set; }
 
+    /// <summary>
+    /// Recurrence pattern: None, Daily, Weekly, Monthly, Yearly
+    /// </summary>
+    public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.None;
+
+    /// <summary>
+    /// Recurrence interval (e.g., every 2 weeks)
+    /// </summary>
+    public int RecurrenceInterval { get; set; } = 1;
+
+    /// <summary>
+    /// For weekly recurrence: which days of week (stored as comma-separated: "Mon,Wed,Fri")
+    /// </summary>
+    [MaxLength(50)]
+    public string? RecurrenceDays { get; set; }
+
+    /// <summary>
+    /// When the recurrence ends (null = never)
+    /// </summary>
+    public DateTime? RecurrenceEndDate { get; set; }
+
+    /// <summary>
+    /// Links recurring instances to the original parent task
+    /// </summary>
+    public int? RecurrenceParentId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
