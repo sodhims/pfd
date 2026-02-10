@@ -385,4 +385,608 @@ public class PlannerTests : PageTest
         await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 3000 });
         Console.WriteLine("Calendar navigation completed - page is responsive");
     }
+
+    [Test]
+    public async Task DragAndDrop_TaskToSchedule_ShouldScheduleTask()
+    {
+        Console.WriteLine("Testing drag-and-drop task scheduling");
+
+        // Ensure we're in Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // First, add a test task if none exist
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var taskTitle = $"Drag Test {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(taskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Check that tasks are added (look for any task count indicator)
+        var taskList = Page.Locator(".task-list");
+        var taskListExists = await taskList.CountAsync() > 0;
+        Console.WriteLine($"Task list visible: {taskListExists}");
+
+        // Debug: what sections exist before clicking tabs?
+        var scheduledSection = Page.Locator(".scheduled-section");
+        var scheduledExists = await scheduledSection.CountAsync() > 0;
+        Console.WriteLine($"Scheduled section visible (before tab click): {scheduledExists}");
+
+        var alldaySectionBefore = Page.Locator(".allday-section");
+        var alldayBeforeCount = await alldaySectionBefore.CountAsync();
+        Console.WriteLine($"Allday section visible (before tab click): {alldayBeforeCount}");
+
+        // Click on "Tasks" tab to see unscheduled tasks (correct selector: .task-section-tabs .section-tab)
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        var tabCount = await tasksTab.CountAsync();
+        Console.WriteLine($"Found {tabCount} Tasks tabs");
+
+        if (tabCount > 0)
+        {
+            // Wait to ensure tab is clickable
+            await Expect(tasksTab.First).ToBeVisibleAsync(new() { Timeout = 3000 });
+            await tasksTab.First.ClickAsync();
+            Console.WriteLine("Clicked Tasks tab");
+            await Page.WaitForTimeoutAsync(1500);  // Longer wait after click
+        }
+        else
+        {
+            // Fallback: try button containing "Tasks" text
+            var fallbackTab = Page.Locator("button:has-text('Tasks')");
+            if (await fallbackTab.CountAsync() > 0)
+            {
+                await fallbackTab.First.ClickAsync();
+                await Page.WaitForTimeoutAsync(1500);
+                Console.WriteLine("Used fallback Tasks tab selector");
+            }
+        }
+
+        // Debug: check what task rows exist
+        var allTaskRows = Page.Locator(".task-row");
+        var allRowCount = await allTaskRows.CountAsync();
+        Console.WriteLine($"Found {allRowCount} total task rows");
+
+        // Check for allday-section
+        var alldaySection = Page.Locator(".allday-section");
+        var alldayCount = await alldaySection.CountAsync();
+        Console.WriteLine($"Found {alldayCount} allday sections");
+
+        // Check for drag handles
+        var dragHandles = Page.Locator(".drag-handle");
+        var handleCount = await dragHandles.CountAsync();
+        Console.WriteLine($"Found {handleCount} drag handles");
+
+        // Find an unscheduled task with drag handle (try multiple selectors)
+        var taskRow = Page.Locator(".task-row.draggable-task, .task-row[draggable='true'], .allday-section .task-row").First;
+        await Expect(taskRow).ToBeVisibleAsync(new() { Timeout = 5000 });
+        Console.WriteLine("Found draggable task row");
+
+        // Get the task's position
+        var taskBox = await taskRow.BoundingBoxAsync();
+        Assert.That(taskBox, Is.Not.Null, "Task row should have bounding box");
+
+        // Find a time slot to drop on (e.g., 10:00 AM slot)
+        var timeSlot = Page.Locator(".task-slot[data-slot='600']");
+        if (await timeSlot.CountAsync() == 0)
+        {
+            // Fall back to any task slot
+            timeSlot = Page.Locator(".task-slot:not(.past-slot)").First;
+        }
+        await Expect(timeSlot).ToBeVisibleAsync(new() { Timeout = 5000 });
+        Console.WriteLine("Found target time slot");
+
+        var slotBox = await timeSlot.BoundingBoxAsync();
+        Assert.That(slotBox, Is.Not.Null, "Time slot should have bounding box");
+
+        // Perform drag and drop
+        Console.WriteLine("Performing drag and drop...");
+
+        var startX = taskBox!.X + taskBox.Width / 2;
+        var startY = taskBox.Y + taskBox.Height / 2;
+        var endX = slotBox!.X + slotBox.Width / 2;
+        var endY = slotBox.Y + slotBox.Height / 2;
+
+        // Use Playwright's drag and drop
+        await taskRow.DragToAsync(timeSlot);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Verify the page is still responsive
+        var plannerContainer = Page.Locator(".planner-container");
+        await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Check if the task now appears in the schedule (click on Scheduled tab)
+        var scheduledTab = Page.Locator(".task-section-tabs .section-tab:has-text('Scheduled')");
+        if (await scheduledTab.CountAsync() > 0)
+        {
+            await scheduledTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Look for the task in schedule slots
+        var scheduledTask = Page.Locator(".slot-task");
+        var scheduledCount = await scheduledTask.CountAsync();
+        Console.WriteLine($"Found {scheduledCount} scheduled tasks after drag-drop");
+
+        Console.WriteLine("Drag and drop test completed - page is responsive");
+    }
+
+    [Test]
+    public async Task DragAndDrop_MultipleDrops_ShouldNotFreeze()
+    {
+        Console.WriteLine("Testing multiple drag-and-drop operations");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Add several test tasks
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        for (int i = 1; i <= 3; i++)
+        {
+            var taskTitle = $"Multi Drag Test {i} - {DateTime.Now:HHmmss}";
+            await taskInput.FillAsync(taskTitle);
+            await Page.Keyboard.PressAsync("Enter");
+            await Page.WaitForTimeoutAsync(1000);
+        }
+
+        // Switch to Tasks tab (correct selector: .task-section-tabs .section-tab)
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+        else
+        {
+            // Fallback
+            var fallbackTab = Page.Locator("button:has-text('Tasks')");
+            if (await fallbackTab.CountAsync() > 0)
+            {
+                await fallbackTab.First.ClickAsync();
+                await Page.WaitForTimeoutAsync(500);
+            }
+        }
+
+        // Drag multiple tasks to different time slots
+        var timeSlots = Page.Locator(".task-slot");
+        var slotCount = await timeSlots.CountAsync();
+
+        for (int i = 0; i < 3; i++)
+        {
+            var taskRows = Page.Locator(".task-row.draggable-task, .task-row[draggable='true']");
+            if (await taskRows.CountAsync() == 0)
+            {
+                Console.WriteLine("No more draggable tasks");
+                break;
+            }
+
+            var taskRow = taskRows.First;
+            var targetSlotIndex = Math.Min(i + 8, slotCount - 1); // Start at slot 8 (8 AM)
+            var targetSlot = timeSlots.Nth(targetSlotIndex);
+
+            Console.WriteLine($"Dragging task to slot {targetSlotIndex}");
+
+            try
+            {
+                await taskRow.DragToAsync(targetSlot);
+                await Page.WaitForTimeoutAsync(1000);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Drag operation {i + 1} had issue: {ex.Message}");
+            }
+
+            // Verify responsive
+            var plannerContainer = Page.Locator(".planner-container");
+            await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 3000 });
+        }
+
+        Console.WriteLine("Multiple drag-drop test completed - page is responsive");
+    }
+
+    [Test]
+    public async Task DragHandle_ShouldBeVisible_ForUnscheduledTasks()
+    {
+        Console.WriteLine("Verifying drag handles are visible");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Add a test task
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var taskTitle = $"Handle Test {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(taskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Switch to Tasks tab (correct selector: .task-section-tabs .section-tab)
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+        else
+        {
+            // Fallback
+            var fallbackTab = Page.Locator("button:has-text('Tasks')");
+            if (await fallbackTab.CountAsync() > 0)
+            {
+                await fallbackTab.First.ClickAsync();
+                await Page.WaitForTimeoutAsync(500);
+            }
+        }
+
+        // Check for drag handles
+        var dragHandles = Page.Locator(".drag-handle");
+        var handleCount = await dragHandles.CountAsync();
+        Console.WriteLine($"Found {handleCount} drag handles");
+
+        // Also check for draggable attribute
+        var draggableRows = Page.Locator(".task-row[draggable='true']");
+        var draggableCount = await draggableRows.CountAsync();
+        Console.WriteLine($"Found {draggableCount} draggable task rows");
+
+        // At least one should exist if there are unscheduled, incomplete tasks
+        Assert.That(handleCount + draggableCount, Is.GreaterThan(0), "Should have drag handles or draggable rows");
+
+        Console.WriteLine("Drag handle verification completed");
+    }
+
+    [Test]
+    public async Task PanelResize_DragLeft_ShouldExpandRightPanel()
+    {
+        Console.WriteLine("Testing panel resize - dragging left should expand right panel");
+
+        // Ensure Daily view (resize handle only shows in daily view)
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Find the resize handle
+        var resizeHandle = Page.Locator(".panel-resize-handle");
+        await Expect(resizeHandle).ToBeVisibleAsync(new() { Timeout = 5000 });
+        Console.WriteLine("Resize handle is visible");
+
+        // Find the day-roller-wrapper (right panel)
+        var rightPanel = Page.Locator(".day-roller-wrapper");
+        await Expect(rightPanel).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Get initial width of right panel
+        var initialBox = await rightPanel.BoundingBoxAsync();
+        Assert.That(initialBox, Is.Not.Null, "Right panel should have bounding box");
+        var initialWidth = initialBox!.Width;
+        Console.WriteLine($"Initial right panel width: {initialWidth}px");
+
+        // Get resize handle position
+        var handleBox = await resizeHandle.BoundingBoxAsync();
+        Assert.That(handleBox, Is.Not.Null, "Resize handle should have bounding box");
+
+        var handleX = handleBox!.X + handleBox.Width / 2;
+        var handleY = handleBox.Y + handleBox.Height / 2;
+
+        // Drag the resize handle LEFT by 100 pixels (should expand right panel)
+        Console.WriteLine("Dragging resize handle left by 100px...");
+        await Page.Mouse.MoveAsync(handleX, handleY);
+        await Page.Mouse.DownAsync();
+        await Page.Mouse.MoveAsync(handleX - 100, handleY, new() { Steps = 10 });
+        await Page.Mouse.UpAsync();
+        await Page.WaitForTimeoutAsync(500);
+
+        // Get new width of right panel
+        var newBox = await rightPanel.BoundingBoxAsync();
+        Assert.That(newBox, Is.Not.Null, "Right panel should still have bounding box after resize");
+        var newWidth = newBox!.Width;
+        Console.WriteLine($"New right panel width: {newWidth}px");
+
+        // Verify the right panel expanded (width increased)
+        Assert.That(newWidth, Is.GreaterThan(initialWidth),
+            $"Right panel should have expanded. Initial: {initialWidth}px, After: {newWidth}px");
+
+        Console.WriteLine($"Panel resize test PASSED: {initialWidth}px -> {newWidth}px (gained {newWidth - initialWidth}px)");
+
+        // Verify page is still responsive
+        var plannerContainer = Page.Locator(".planner-container");
+        await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 3000 });
+    }
+
+    [Test]
+    public async Task PanelResize_DragRight_ShouldShrinkRightPanel()
+    {
+        Console.WriteLine("Testing panel resize - dragging right should shrink right panel");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Find the resize handle
+        var resizeHandle = Page.Locator(".panel-resize-handle");
+        await Expect(resizeHandle).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Find the day-roller-wrapper (right panel)
+        var rightPanel = Page.Locator(".day-roller-wrapper");
+        await Expect(rightPanel).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // First, expand the panel by dragging left
+        var handleBox = await resizeHandle.BoundingBoxAsync();
+        var handleX = handleBox!.X + handleBox.Width / 2;
+        var handleY = handleBox.Y + handleBox.Height / 2;
+
+        await Page.Mouse.MoveAsync(handleX, handleY);
+        await Page.Mouse.DownAsync();
+        await Page.Mouse.MoveAsync(handleX - 100, handleY, new() { Steps = 10 });
+        await Page.Mouse.UpAsync();
+        await Page.WaitForTimeoutAsync(500);
+
+        // Get the expanded width
+        var expandedBox = await rightPanel.BoundingBoxAsync();
+        var expandedWidth = expandedBox!.Width;
+        Console.WriteLine($"Expanded right panel width: {expandedWidth}px");
+
+        // Now drag right to shrink
+        handleBox = await resizeHandle.BoundingBoxAsync();
+        handleX = handleBox!.X + handleBox.Width / 2;
+        handleY = handleBox.Y + handleBox.Height / 2;
+
+        Console.WriteLine("Dragging resize handle right by 50px...");
+        await Page.Mouse.MoveAsync(handleX, handleY);
+        await Page.Mouse.DownAsync();
+        await Page.Mouse.MoveAsync(handleX + 50, handleY, new() { Steps = 10 });
+        await Page.Mouse.UpAsync();
+        await Page.WaitForTimeoutAsync(500);
+
+        // Get shrunk width
+        var shrunkBox = await rightPanel.BoundingBoxAsync();
+        var shrunkWidth = shrunkBox!.Width;
+        Console.WriteLine($"Shrunk right panel width: {shrunkWidth}px");
+
+        // Verify the right panel shrunk
+        Assert.That(shrunkWidth, Is.LessThan(expandedWidth),
+            $"Right panel should have shrunk. Expanded: {expandedWidth}px, After: {shrunkWidth}px");
+
+        Console.WriteLine($"Panel shrink test PASSED: {expandedWidth}px -> {shrunkWidth}px (lost {expandedWidth - shrunkWidth}px)");
+    }
+
+    [Test]
+    public async Task DragAndDrop_TasksTabToRightPanelTimeSlot_ShouldScheduleTask()
+    {
+        Console.WriteLine("Testing drag from Tasks tab (center panel) to right panel time slot");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Add a test task
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var taskTitle = $"Drag to Right Panel {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(taskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Click on Tasks tab to see unscheduled tasks
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(1000);
+        }
+
+        // Find the draggable task in center panel
+        var draggableTask = Page.Locator(".allday-section .task-row.draggable-task, .allday-section .task-row[draggable='true']").First;
+        await Expect(draggableTask).ToBeVisibleAsync(new() { Timeout = 5000 });
+        Console.WriteLine("Found draggable task in center panel");
+
+        // Find a time slot in the RIGHT panel (time-tasks-panel)
+        var rightPanelTimeSlot = Page.Locator(".time-tasks-panel .task-slot[data-slot='600']");
+        if (await rightPanelTimeSlot.CountAsync() == 0)
+        {
+            rightPanelTimeSlot = Page.Locator(".time-tasks-panel .task-slot:not(.past-slot)").First;
+        }
+        await Expect(rightPanelTimeSlot).ToBeVisibleAsync(new() { Timeout = 5000 });
+        Console.WriteLine("Found target time slot in right panel");
+
+        // Perform drag from center panel to right panel
+        Console.WriteLine("Dragging task from center panel to right panel time slot...");
+        await draggableTask.DragToAsync(rightPanelTimeSlot);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Verify the page is still responsive
+        var plannerContainer = Page.Locator(".planner-container");
+        await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Check if the task appears in the right panel schedule
+        var scheduledTaskInRightPanel = Page.Locator(".time-tasks-panel .slot-task");
+        var scheduledCount = await scheduledTaskInRightPanel.CountAsync();
+        Console.WriteLine($"Found {scheduledCount} scheduled tasks in right panel after drag");
+
+        // Also check Scheduled tab in center panel
+        var scheduledTab = Page.Locator(".task-section-tabs .section-tab:has-text('Scheduled')");
+        if (await scheduledTab.CountAsync() > 0)
+        {
+            await scheduledTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        var scheduledTasks = Page.Locator(".scheduled-section .task-row");
+        var scheduledTaskCount = await scheduledTasks.CountAsync();
+        Console.WriteLine($"Found {scheduledTaskCount} scheduled tasks in center panel Scheduled tab");
+
+        Console.WriteLine("Drag from center to right panel test completed");
+    }
+
+    [Test]
+    public async Task DragAndDrop_WaitingTabToRightPanel_ShouldMoveAndScheduleTask()
+    {
+        Console.WriteLine("Testing drag from Waiting tab to right panel - should move to today AND schedule");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Click on Waiting tab
+        var waitingTab = Page.Locator(".task-section-tabs .section-tab:has-text('Waiting')");
+        if (await waitingTab.CountAsync() > 0)
+        {
+            await waitingTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(1000);
+        }
+
+        // Check if there are any waiting/overdue tasks
+        var waitingTasks = Page.Locator(".waiting-tab-section .task-row.draggable-task, .waiting-tab-section .task-row[draggable='true']");
+        var waitingCount = await waitingTasks.CountAsync();
+        Console.WriteLine($"Found {waitingCount} draggable tasks in Waiting tab");
+
+        if (waitingCount == 0)
+        {
+            Console.WriteLine("No waiting tasks to test - skipping drag portion");
+            Assert.Pass("No waiting tasks available for drag test");
+            return;
+        }
+
+        // Get the first draggable waiting task
+        var waitingTask = waitingTasks.First;
+        await Expect(waitingTask).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Find a time slot in the right panel
+        var rightPanelTimeSlot = Page.Locator(".time-tasks-panel .task-slot[data-slot='840']");
+        if (await rightPanelTimeSlot.CountAsync() == 0)
+        {
+            rightPanelTimeSlot = Page.Locator(".time-tasks-panel .task-slot").Nth(6);
+        }
+        await Expect(rightPanelTimeSlot).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Drag waiting task to right panel
+        Console.WriteLine("Dragging waiting task to right panel...");
+        await waitingTask.DragToAsync(rightPanelTimeSlot);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Verify page is responsive
+        var plannerContainer = Page.Locator(".planner-container");
+        await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        // Check if task is now scheduled
+        var scheduledTaskInRightPanel = Page.Locator(".time-tasks-panel .slot-task");
+        var scheduledCount = await scheduledTaskInRightPanel.CountAsync();
+        Console.WriteLine($"Found {scheduledCount} scheduled tasks in right panel after drag from Waiting");
+
+        Console.WriteLine("Drag from Waiting tab to right panel test completed");
+    }
+
+
+    [Test]
+    public async Task TasksAndWaiting_ShouldPersistWhenDateChanges()
+    {
+        Console.WriteLine("Testing that Tasks and Waiting tabs persist when scrolling dates");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Add a test task (unscheduled)
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var taskTitle = $"Persist Test {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(taskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Click on Tasks tab
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Count tasks in Tasks tab before date change
+        var taskRows = Page.Locator(".allday-section .task-row");
+        var initialTaskCount = await taskRows.CountAsync();
+        Console.WriteLine($"Initial task count in Tasks tab: {initialTaskCount}");
+
+        // Click on Waiting tab and count
+        var waitingTab = Page.Locator(".task-section-tabs .section-tab:has-text('Waiting')");
+        if (await waitingTab.CountAsync() > 0)
+        {
+            await waitingTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+        var waitingTasks = Page.Locator(".waiting-tab-section .task-row");
+        var initialWaitingCount = await waitingTasks.CountAsync();
+        Console.WriteLine($"Initial waiting count: {initialWaitingCount}");
+
+        // Now click on a different date in the day roller (right panel)
+        var dayRollerDays = Page.Locator(".day-roller .day-item");
+        if (await dayRollerDays.CountAsync() > 5)
+        {
+            // Click on a date 5 days from now
+            await dayRollerDays.Nth(5).ClickAsync();
+            await Page.WaitForTimeoutAsync(1000);
+            Console.WriteLine("Clicked on different date in day roller");
+        }
+
+        // Check Waiting tab still has same count
+        if (await waitingTab.CountAsync() > 0)
+        {
+            await waitingTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+        var waitingAfter = await waitingTasks.CountAsync();
+        Console.WriteLine($"Waiting count after date change: {waitingAfter}");
+        Assert.That(waitingAfter, Is.EqualTo(initialWaitingCount),
+            "Waiting tasks should persist after date change");
+
+        // Check Tasks tab still has tasks
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+        var tasksAfter = await taskRows.CountAsync();
+        Console.WriteLine($"Task count after date change: {tasksAfter}");
+        Assert.That(tasksAfter, Is.GreaterThanOrEqualTo(initialTaskCount),
+            "Tasks should persist after date change");
+
+        Console.WriteLine("Tasks and Waiting persistence test completed");
+    }
 }

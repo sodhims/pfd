@@ -866,7 +866,7 @@
                                  @ondragover="(e) => OnDragOverSlot(e, slot)"
                                  @ondragover:preventDefault
                                  @ondragleave="OnDragLeaveSlot"
-                                 @ondrop="() => OnDropOnSlot(slot)"
+                                 @ondrop="() => OnDropOnSlot(slot)" @ondrop:preventDefault
                                  data-slot="@slot.TotalMinutes">
                                 @if (DragOverSlot == slot && DraggingTaskId.HasValue && !isPastSlot)
                                 {
@@ -2207,6 +2207,12 @@
                 WeeklyTasks = await TaskService.GetTasksForDateRangeAsync(startOfWeek, startOfWeek.AddDays(4), CurrentUserId);
                 Tasks.Clear();
             }
+            // Update calendar badge for selected date
+            var calendarDay = CalendarDays.FirstOrDefault(d => d.Date.Date == SelectedDate.Date);
+            if (calendarDay != null)
+            {
+                calendarDay.TaskCount = Tasks.Count(t => !t.IsCompleted);
+            }
             StateHasChanged();
         }
         finally
@@ -3087,9 +3093,17 @@
 
     private void OnDragEnd()
     {
-        DraggingTaskId = null;
-        DragOverHour = null;
-        StateHasChanged();
+        // Small delay to allow OnDropOnSlot to fire first
+        _ = Task.Delay(100).ContinueWith(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                DraggingTaskId = null;
+                DragOverHour = null;
+                DragOverSlot = null;
+                StateHasChanged();
+            });
+        });
     }
 
     private void OnDragOver(DragEventArgs e, int hour)
@@ -3160,6 +3174,7 @@
             DragOverSlot = null;
 
             await LoadTasksAsync();
+            await LoadCalendarTaskCountsAsync();
         }
     }
 
@@ -3201,6 +3216,7 @@
             DragOverHour = null;
 
             await LoadTasksAsync();
+            await LoadCalendarTaskCountsAsync();
         }
     }
 
