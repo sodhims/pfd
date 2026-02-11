@@ -879,7 +879,7 @@
                         var isSelected = dayOffset == 0;
                         var isWeekend = displayDate.DayOfWeek == DayOfWeek.Saturday || displayDate.DayOfWeek == DayOfWeek.Sunday;
                         var taskCount = GetTaskCountForDate(displayDate);
-                        var opacity = 1.0 - (Math.Abs(dayOffset) * 0.15);
+                        var opacity = 1.0 - (Math.Abs(dayOffset) * 0.05);
 
                         <div class="day-slot @(isToday ? "today" : "") @(isSelected ? "selected" : "") @(isWeekend ? "weekend" : "")"
                              style="opacity: @opacity.ToString("F2"); cursor: pointer;"
