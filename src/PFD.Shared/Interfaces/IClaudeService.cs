@@ -28,4 +28,9 @@ public interface IClaudeService
     /// Generic prompt - send any prompt and get a text response
     /// </summary>
     Task<string?> SendPromptAsync(string systemPrompt, string userPrompt);
+
+    /// <summary>
+    /// AI-powered semantic search across all tasks
+    /// </summary>
+    Task<TaskSearchResponse> SearchTasksAsync(string query, List<DailyTask> allTasks);
 }

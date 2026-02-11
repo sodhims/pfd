@@ -102,6 +102,11 @@ public class TaskService : ITaskService
         return await _taskRepository.GetUnscheduledTasksAsync(userId);
     }
 
+    public async Task<List<DailyTask>> SearchAllTasksAsync(int userId, int maxResults = 500)
+    {
+        return await _taskRepository.SearchAllTasksAsync(userId, maxResults);
+    }
+
     // Participant management
     public async Task<List<Participant>> GetAllParticipantsAsync()
     {

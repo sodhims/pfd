@@ -368,4 +368,22 @@ public class TaskRepository
             .Select(tp => tp.Participant)
             .ToListAsync();
     }
+
+    /// <summary>
+    /// Search all tasks for a user (for AI-powered search)
+    /// </summary>
+    public async Task<List<DailyTask>> SearchAllTasksAsync(int userId, int maxResults = 500)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
+
+        return await context.DailyTasks
+            .Where(t => t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value)))
+            .OrderByDescending(t => t.TaskDate)
+            .Take(maxResults)
+            .Include(t => t.Participants)
+                .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
+            .ToListAsync();
+    }
 }

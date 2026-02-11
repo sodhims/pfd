@@ -16,6 +16,7 @@
 @inject INotificationService NotificationService
 @inject IInsightHistoryService InsightHistoryService
 @inject ITaskTemplateService TaskTemplateService
+@inject IClaudeService ClaudeService
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
@@ -287,6 +288,7 @@
             <button @onclick="AddTask">Add</button>
             <div class="template-dropdown">
                 <button class="template-btn" @onclick="ToggleTemplateDropdown" title="Use template">&#128203;</button>
+                <button class="search-btn" @onclick="ToggleSearchPanel" title="AI Search">&#128269;</button>
                 @if (ShowTemplateDropdown)
                 {
                     <div class="template-menu">
@@ -311,6 +313,61 @@
                 }
             </div>
         </div>
+
+        <!-- Search Panel -->
+        @if (ShowSearchPanel)
+        {
+            <div class="search-panel">
+                <div class="search-header">
+                    <span class="search-icon">&#128269;</span>
+                    <span>AI-Powered Search</span>
+                    <button class="close-search-btn" @onclick="CloseSearchPanel">×</button>
+                </div>
+                <div class="search-input-row">
+                    <input type="text" @bind="SearchQuery" @bind:event="oninput"
+                           @onkeydown="HandleSearchKeyDown" placeholder="Search tasks... (e.g., 'meetings last week', 'incomplete work tasks')"
+                           class="search-input" />
+                    <button class="search-execute-btn" @onclick="ExecuteSearch" disabled="@IsSearching">
+                        @if (IsSearching)
+                        {
+                            <span>...</span>
+                        }
+                        else
+                        {
+                            <span>Search</span>
+                        }
+                    </button>
+                </div>
+                @if (SearchResults != null)
+                {
+                    <div class="search-results">
+                        <div class="search-summary">@SearchResults.Summary</div>
+                        @if (SearchResults.Results.Any())
+                        {
+                            <div class="search-results-list">
+                                @foreach (var result in SearchResults.Results)
+                                {
+                                    <div class="search-result-item @(result.Task.IsCompleted ? "completed" : "")" @onclick="() => NavigateToTask(result.Task)">
+                                        <div class="result-header">
+                                            <span class="result-title">@result.Task.Title</span>
+                                            <span class="result-date">@result.Task.TaskDate.ToString("MMM d, yyyy")</span>
+                                        </div>
+                                        <div class="result-meta">
+                                            <span class="result-reason">@result.MatchReason</span>
+                                            <span class="result-score">@result.RelevanceScore%</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="no-results">No matching tasks found.</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
 
         <!-- Calendar Tabs - Always show -->
         <div class="calendar-tabs-container">
@@ -1819,6 +1876,12 @@
     private bool ShowAiPanel { get; set; } = false;
     private bool IsAiLoading { get; set; } = false;
 
+    // Search properties
+    private bool ShowSearchPanel { get; set; } = false;
+    private string SearchQuery { get; set; } = "";
+    private bool IsSearching { get; set; } = false;
+    private TaskSearchResponse? SearchResults { get; set; }
+
     // Credentials section properties
     private bool ShowCredentialsSection { get; set; } = false;
     private bool ShowCalendarCredentials { get; set; } = false;
@@ -2548,6 +2611,75 @@
         {
             _ = LoadAiInsightsAsync();
         }
+    }
+
+    // Search methods
+    private void ToggleSearchPanel()
+    {
+        ShowSearchPanel = !ShowSearchPanel;
+        if (ShowSearchPanel)
+        {
+            SearchResults = null;
+            SearchQuery = "";
+        }
+    }
+
+    private void CloseSearchPanel()
+    {
+        ShowSearchPanel = false;
+        SearchResults = null;
+        SearchQuery = "";
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ExecuteSearch();
+        }
+        else if (e.Key == "Escape")
+        {
+            CloseSearchPanel();
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(SearchQuery) || IsSearching || CurrentUserId == 0) return;
+
+        try
+        {
+            IsSearching = true;
+            StateHasChanged();
+
+            // Get all tasks for the user
+            var allTasks = await TaskService.SearchAllTasksAsync(CurrentUserId, 500);
+
+            // Use Claude to search
+            SearchResults = await ClaudeService.SearchTasksAsync(SearchQuery, allTasks);
+        }
+        catch (Exception ex)
+        {
+            SearchResults = new TaskSearchResponse
+            {
+                Summary = $"Search error: {ex.Message}",
+                Results = new List<TaskSearchResult>()
+            };
+        }
+        finally
+        {
+            IsSearching = false;
+            StateHasChanged();
+        }
+    }
+
+    private void NavigateToTask(DailyTask task)
+    {
+        // Navigate to the task's date
+        SelectedDate = task.TaskDate;
+        CurrentMonth = new DateTime(task.TaskDate.Year, task.TaskDate.Month, 1);
+        CloseSearchPanel();
+        BuildCalendar();
     }
 
     // Credentials section toggles

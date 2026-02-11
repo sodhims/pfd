@@ -286,4 +286,126 @@ Be encouraging but honest. Focus on actionable improvements.";
         result.GeneratedAt = DateTime.UtcNow;
         return await Task.FromResult(result);
     }
+
+    public async Task<TaskSearchResponse> SearchTasksAsync(string query, List<DailyTask> allTasks)
+    {
+        var response = new TaskSearchResponse
+        {
+            TotalSearched = allTasks.Count
+        };
+
+        if (!allTasks.Any())
+        {
+            response.Summary = "No tasks to search.";
+            return response;
+        }
+
+        // Build a compact task list for the AI
+        var taskData = allTasks.Select(t => new
+        {
+            id = t.Id,
+            title = t.Title,
+            description = t.Description,
+            date = t.TaskDate.ToString("yyyy-MM-dd"),
+            completed = t.IsCompleted,
+            started = t.IsStarted,
+            type = t.TaskType.ToString(),
+            recurring = t.RecurrenceType.ToString()
+        }).ToList();
+
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            // Fallback to simple text search without AI
+            var lowerQuery = query.ToLowerInvariant();
+            var matches = allTasks
+                .Where(t => (t.Title?.ToLowerInvariant().Contains(lowerQuery) ?? false) ||
+                            (t.Description?.ToLowerInvariant().Contains(lowerQuery) ?? false))
+                .Take(20)
+                .Select(t => new TaskSearchResult
+                {
+                    Task = t,
+                    MatchReason = "Text match",
+                    RelevanceScore = 70
+                })
+                .ToList();
+
+            response.Results = matches;
+            response.Summary = $"Found {matches.Count} tasks matching \"{query}\" (text search).";
+            return response;
+        }
+
+        try
+        {
+            var systemPrompt = @"You are a task search assistant. Given a natural language query and a list of tasks, identify the most relevant tasks.
+
+Understand the intent behind the query:
+- ""meetings last week"" -> find meeting-type tasks from last week
+- ""incomplete work tasks"" -> find work tasks that are not completed
+- ""thesis"" -> find tasks mentioning thesis or academic work
+- ""with John"" -> find tasks where the description mentions John
+- ""overdue"" -> find incomplete tasks from the past
+
+Respond with ONLY valid JSON (no markdown):
+{
+  ""matchingIds"": [1, 2, 3],
+  ""reasons"": {""1"": ""reason"", ""2"": ""reason""},
+  ""scores"": {""1"": 95, ""2"": 80},
+  ""summary"": ""brief summary of what was found""
+}
+
+Return at most 20 matches, ordered by relevance. Today is " + DateTime.Today.ToString("yyyy-MM-dd") + ".";
+
+            var userPrompt = $"Query: \"{query}\"\n\nTasks:\n{JsonSerializer.Serialize(taskData)}";
+
+            var aiResponse = await CallClaudeAsync(systemPrompt, userPrompt);
+            if (aiResponse != null)
+            {
+                var parsed = JsonSerializer.Deserialize<SearchAiResponse>(ExtractJson(aiResponse), _jsonOptions);
+                if (parsed != null)
+                {
+                    var taskDict = allTasks.ToDictionary(t => t.Id);
+                    foreach (var id in parsed.MatchingIds ?? new List<int>())
+                    {
+                        if (taskDict.TryGetValue(id, out var task))
+                        {
+                            response.Results.Add(new TaskSearchResult
+                            {
+                                Task = task,
+                                MatchReason = parsed.Reasons?.GetValueOrDefault(id.ToString(), "") ?? "",
+                                RelevanceScore = parsed.Scores?.GetValueOrDefault(id.ToString(), 50) ?? 50
+                            });
+                        }
+                    }
+                    response.Summary = parsed.Summary ?? $"Found {response.Results.Count} matching tasks.";
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to simple search on error
+            var lowerQuery = query.ToLowerInvariant();
+            response.Results = allTasks
+                .Where(t => (t.Title?.ToLowerInvariant().Contains(lowerQuery) ?? false) ||
+                            (t.Description?.ToLowerInvariant().Contains(lowerQuery) ?? false))
+                .Take(20)
+                .Select(t => new TaskSearchResult
+                {
+                    Task = t,
+                    MatchReason = "Text match",
+                    RelevanceScore = 70
+                })
+                .ToList();
+            response.Summary = $"Found {response.Results.Count} tasks (fallback search).";
+        }
+
+        return response;
+    }
+
+    private class SearchAiResponse
+    {
+        public List<int>? MatchingIds { get; set; }
+        public Dictionary<string, string>? Reasons { get; set; }
+        public Dictionary<string, int>? Scores { get; set; }
+        public string? Summary { get; set; }
+    }
 }

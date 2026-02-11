@@ -316,3 +316,45 @@ public class CalendarRecommendation
     public string Priority { get; set; } = "medium"; // high, medium, low
     public string? ActionLabel { get; set; }
 }
+
+/// <summary>
+/// AI-powered search result
+/// </summary>
+public class TaskSearchResult
+{
+    /// <summary>
+    /// The matching task
+    /// </summary>
+    public required DailyTask Task { get; set; }
+
+    /// <summary>
+    /// Why this task matched the query
+    /// </summary>
+    public string MatchReason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Relevance score (0-100)
+    /// </summary>
+    public int RelevanceScore { get; set; }
+}
+
+/// <summary>
+/// Full search response from AI
+/// </summary>
+public class TaskSearchResponse
+{
+    /// <summary>
+    /// Matching tasks with relevance info
+    /// </summary>
+    public List<TaskSearchResult> Results { get; set; } = new();
+
+    /// <summary>
+    /// AI summary of the search results
+    /// </summary>
+    public string Summary { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Total tasks searched
+    /// </summary>
+    public int TotalSearched { get; set; }
+}
