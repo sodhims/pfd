@@ -361,44 +361,65 @@ Return at most 20 matches, ordered by relevance. Today is " + DateTime.Today.ToS
             if (aiResponse != null)
             {
                 var parsed = JsonSerializer.Deserialize<SearchAiResponse>(ExtractJson(aiResponse), _jsonOptions);
-                if (parsed != null)
+                if (parsed != null && parsed.MatchingIds != null && parsed.MatchingIds.Any())
                 {
                     var taskDict = allTasks.ToDictionary(t => t.Id);
-                    foreach (var id in parsed.MatchingIds ?? new List<int>())
+                    foreach (var id in parsed.MatchingIds)
                     {
                         if (taskDict.TryGetValue(id, out var task))
                         {
                             response.Results.Add(new TaskSearchResult
                             {
                                 Task = task,
-                                MatchReason = parsed.Reasons?.GetValueOrDefault(id.ToString(), "") ?? "",
+                                MatchReason = parsed.Reasons?.GetValueOrDefault(id.ToString(), "Matched query") ?? "Matched query",
                                 RelevanceScore = parsed.Scores?.GetValueOrDefault(id.ToString(), 50) ?? 50
                             });
                         }
                     }
                     response.Summary = parsed.Summary ?? $"Found {response.Results.Count} matching tasks.";
                 }
+                else
+                {
+                    // AI returned no matches - do fallback text search
+                    response = DoTextSearch(query, allTasks, response.TotalSearched);
+                }
+            }
+            else
+            {
+                // API call failed - do fallback text search
+                response = DoTextSearch(query, allTasks, response.TotalSearched);
             }
         }
         catch
         {
-            // Fallback to simple search on error
-            var lowerQuery = query.ToLowerInvariant();
-            response.Results = allTasks
-                .Where(t => (t.Title?.ToLowerInvariant().Contains(lowerQuery) ?? false) ||
-                            (t.Description?.ToLowerInvariant().Contains(lowerQuery) ?? false))
-                .Take(20)
-                .Select(t => new TaskSearchResult
-                {
-                    Task = t,
-                    MatchReason = "Text match",
-                    RelevanceScore = 70
-                })
-                .ToList();
-            response.Summary = $"Found {response.Results.Count} tasks (fallback search).";
+            // Error - do fallback text search
+            response = DoTextSearch(query, allTasks, response.TotalSearched);
         }
 
         return response;
+    }
+
+    private TaskSearchResponse DoTextSearch(string query, List<DailyTask> allTasks, int totalSearched)
+    {
+        var lowerQuery = query.ToLowerInvariant();
+        var matches = allTasks
+            .Where(t => (t.Title?.ToLowerInvariant().Contains(lowerQuery) ?? false) ||
+                        (t.Description?.ToLowerInvariant().Contains(lowerQuery) ?? false))
+            .Take(20)
+            .Select(t => new TaskSearchResult
+            {
+                Task = t,
+                MatchReason = "Text match",
+                RelevanceScore = 70
+            })
+            .ToList();
+
+        return new TaskSearchResponse
+        {
+            Results = matches,
+            Summary = $"Found {matches.Count} tasks matching \"{query}\" (searched {totalSearched} tasks).",
+            TotalSearched = totalSearched
+        };
     }
 
     private class SearchAiResponse

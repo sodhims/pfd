@@ -2660,8 +2660,25 @@
             // Get all tasks for the user
             var allTasks = await TaskService.SearchAllTasksAsync(CurrentUserId, 500);
 
+            if (!allTasks.Any())
+            {
+                SearchResults = new TaskSearchResponse
+                {
+                    Summary = "No tasks found in database to search.",
+                    Results = new List<TaskSearchResult>(),
+                    TotalSearched = 0
+                };
+                return;
+            }
+
             // Use Claude to search
             SearchResults = await ClaudeService.SearchTasksAsync(SearchQuery, allTasks);
+
+            // If no results and no summary, provide feedback
+            if (string.IsNullOrEmpty(SearchResults.Summary))
+            {
+                SearchResults.Summary = $"Searched {allTasks.Count} tasks for \"{SearchQuery}\"";
+            }
         }
         catch (Exception ex)
         {
