@@ -348,13 +348,18 @@
                                 @foreach (var result in SearchResults.Results)
                                 {
                                     <div class="search-result-item @(result.Task.IsCompleted ? "completed" : "")" @onclick="() => NavigateToTask(result.Task)">
-                                        <div class="result-header">
-                                            <span class="result-title">@result.Task.Title</span>
-                                            <span class="result-date">@result.Task.TaskDate.ToString("MMM d, yyyy")</span>
+                                        <div class="result-date-line">
+                                            <span class="result-date-icon">&#128197;</span>
+                                            <span class="result-date">@result.Task.TaskDate.ToString("ddd, MMM d, yyyy")</span>
+                                            @if (result.Task.ScheduledTime.HasValue)
+                                            {
+                                                <span class="result-time">@FormatTime(result.Task.ScheduledTime)</span>
+                                            }
                                         </div>
+                                        <div class="result-title">@result.Task.Title</div>
                                         <div class="result-meta">
-                                            <span class="result-reason">@result.MatchReason</span>
-                                            <span class="result-score">@result.RelevanceScore%</span>
+                                            <span class="result-type">@result.Task.TaskType</span>
+                                            <span class="result-status">@(result.Task.IsCompleted ? "✓ Done" : result.Task.IsStarted ? "▶ Started" : "○ Pending")</span>
                                         </div>
                                     </div>
                                 }

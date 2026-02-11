@@ -6719,38 +6719,52 @@
     border-left-color: #27ae60;
 }
 
-.result-header {
+.result-date-line {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 8px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--button-bg);
+    font-weight: 600;
+}
+
+.result-date-icon {
+    font-size: 14px;
+}
+
+.result-date {
+    flex: 1;
+}
+
+.result-time {
+    background: var(--button-bg);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
 }
 
 .result-title {
     font-weight: bold;
-    font-size: 13px;
-}
-
-.result-date {
-    font-size: 11px;
-    opacity: 0.7;
-    white-space: nowrap;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: var(--text-primary);
 }
 
 .result-meta {
     display: flex;
     justify-content: space-between;
-    margin-top: 4px;
     font-size: 11px;
     opacity: 0.8;
 }
 
-.result-reason {
-    flex: 1;
+.result-type {
+    text-transform: capitalize;
 }
 
-.result-score {
-    font-weight: bold;
+.result-status {
+    font-weight: 500;
 }
 
 .no-results {
