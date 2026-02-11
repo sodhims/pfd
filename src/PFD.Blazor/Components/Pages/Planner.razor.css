@@ -6952,13 +6952,13 @@
         width: 100% !important;
         max-width: 100% !important;
         min-width: unset !important;
-        flex-direction: row !important;
-        min-height: 70px !important;
-        max-height: 70px !important;
-        height: 70px !important;
+        flex-direction: column !important;
+        min-height: 80px !important;
+        max-height: 80px !important;
+        height: 80px !important;
         order: 3;
-        padding: 8px 0;
-        background: var(--frame-bg);
+        padding: 4px 8px;
+        background: var(--calendar-bg);
         border-radius: 8px;
         overflow: hidden;
     }
@@ -6967,34 +6967,118 @@
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
-        height: 54px !important;
+        height: 100% !important;
         border-radius: 6px;
         flex-direction: row !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
+        overflow: visible !important;
+        background: transparent !important;
+    }
+
+    /* Hide up/down navigation buttons on mobile */
+    .day-nav-btn.up,
+    .day-nav-btn.down {
+        display: none !important;
+    }
+
+    /* Make roller actions horizontal with Today button */
+    .roller-actions {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center;
+        padding: 0 4px;
+        background: transparent;
+        flex-shrink: 0;
+    }
+
+    .roller-today-btn {
+        padding: 8px 12px;
+        font-size: 11px;
+        background: var(--button-bg);
+        color: white;
+        border-radius: 6px;
+        white-space: nowrap;
     }
 
     .day-roller-track {
         flex-direction: row !important;
         width: auto !important;
-        height: 100% !important;
-        gap: 4px;
+        height: 60px !important;
+        gap: 6px;
+        padding: 4px 8px;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        transform: none !important;
+        flex: 1;
+        align-items: center;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+    }
+
+    .day-roller-track::-webkit-scrollbar {
+        display: none;
     }
 
     .day-slot {
-        width: 48px !important;
-        min-width: 48px !important;
-        height: 48px !important;
+        width: 52px !important;
+        min-width: 52px !important;
+        height: 52px !important;
         flex-shrink: 0;
         font-size: 11px;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--calendar-day-bg);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .day-slot.selected {
+        background: var(--calendar-selected) !important;
+        color: white !important;
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .day-slot.today {
+        border: 2px solid var(--button-bg);
+    }
+
+    .day-slot.weekend {
+        background: rgba(0,0,0,0.1);
     }
 
     .day-slot .day-name {
         font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
     }
 
-    .day-slot .day-number {
-        font-size: 14px;
+    .day-slot .day-num {
+        font-size: 16px;
+        font-weight: bold;
+    }
+
+    .day-slot .day-month {
+        font-size: 8px;
+        opacity: 0.8;
+    }
+
+    .day-slot .day-task-count {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        background: var(--button-bg);
+        color: white;
+        font-size: 9px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     /* Hide the time tasks panel in day roller on mobile */
