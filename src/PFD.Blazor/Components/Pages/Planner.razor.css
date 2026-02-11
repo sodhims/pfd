@@ -6784,24 +6784,27 @@
 /* Small phones and Galaxy Fold folded (under 400px) */
 @media screen and (max-width: 400px) {
     .planner-container {
-        flex-direction: column;
+        flex-direction: column !important;
         padding: 8px;
         gap: 8px;
         margin: 4px;
-        height: auto;
-        min-height: auto;
+        height: auto !important;
+        min-height: auto !important;
         overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .left-panel {
-        width: 100%;
+        width: 100% !important;
+        max-width: 100% !important;
         max-height: none;
-        flex-shrink: 1;
+        flex-shrink: 0;
     }
 
     .center-panel {
-        min-width: 100%;
-        width: 100%;
+        min-width: unset !important;
+        width: 100% !important;
+        max-width: 100% !important;
         padding: 8px;
     }
 
@@ -6902,77 +6905,46 @@
 /* Medium phones and Galaxy Fold unfolded (400px - 768px) */
 @media screen and (max-width: 768px) and (min-width: 401px) {
     .planner-container {
-        flex-direction: column;
+        flex-direction: column !important;
         padding: 10px;
         gap: 10px;
         margin: 4px;
-        height: auto;
-        min-height: auto;
+        height: auto !important;
+        min-height: auto !important;
         overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .left-panel {
-        width: 100%;
+        width: 100% !important;
+        max-width: 100% !important;
         max-height: none;
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: space-between;
+        flex-direction: column;
+        flex-shrink: 0;
+        order: 1;
     }
 
     .calendar-section {
-        flex: 1 1 45%;
-        min-width: 250px;
+        width: 100%;
     }
 
     .settings-section {
-        flex: 1 1 45%;
-        min-width: 200px;
+        width: 100%;
     }
 
     .center-panel {
-        min-width: 100%;
-        width: 100%;
-        padding: 10px;
-    }
-
-    /* Hide resize handle on tablet */
-    .panel-resize-handle {
-        display: none !important;
-    }
-
-    /* Show day roller but make it horizontal at bottom */
-    .day-roller-wrapper {
-        width: 100%;
-        flex-direction: column;
-        min-height: auto;
-        max-height: 200px;
-    }
-
-    .day-roller {
+        min-width: unset !important;
         width: 100% !important;
-        min-width: 100% !important;
         max-width: 100% !important;
-        height: 60px;
-        border-radius: 8px;
-        flex-direction: row !important;
-        overflow-x: auto;
-        overflow-y: hidden;
+        padding: 10px;
+        flex: 1 1 auto;
+        order: 2;
     }
 
-    .day-roller-track {
-        flex-direction: row !important;
-        width: auto;
-        height: 100%;
-    }
-
-    .day-slot {
-        width: 50px;
-        height: 50px;
-        flex-shrink: 0;
-    }
-
-    .time-tasks-panel {
-        display: none;
+    /* Hide resize handle and day roller on medium phones */
+    .panel-resize-handle,
+    .day-roller-wrapper {
+        display: none !important;
     }
 
     /* Task rows */
@@ -6982,7 +6954,39 @@
     }
 
     .task-title {
-        max-width: 200px;
+        max-width: calc(100% - 100px);
+    }
+
+    /* Ensure task list doesn't overflow */
+    .task-list {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    /* Compact header for mobile */
+    .task-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* Tabs should wrap if needed */
+    .section-tabs {
+        flex-wrap: wrap;
+    }
+
+    .section-tab {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    /* Add task should be responsive */
+    .add-task {
+        flex-wrap: wrap;
+    }
+
+    .add-task input[type="text"] {
+        flex: 1 1 100%;
+        min-width: 0;
     }
 }
 
