@@ -769,12 +769,7 @@
                                      @ondragend="OnDragEnd"
                                      @ondblclick="() => OpenTimeEditor(task)"
                                      data-task-id="@task.Id">
-                                    @if (!task.IsCompleted)
-                                    {
-                                        <span class="drag-handle" title="Drag to schedule">&#9776;</span>
-                                    }
-                                    <input type="checkbox" class="started-cb" checked="@task.IsStarted" @onchange="() => ToggleStartedOverdue(task)" title="Started" />
-                                    <input type="checkbox" class="completed-cb" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" title="Completed" />
+                                    <span class="drag-handle" title="Drag to schedule">&#9776;</span>
                                     @if (task.ScheduledTime.HasValue)
                                     {
                                         <span class="task-time waiting-time" title="Originally scheduled for @FormatTime(task.ScheduledTime)">
