@@ -529,9 +529,9 @@
                     <button class="section-tab @(ActiveTaskSection == TaskSection.Tasks ? "active" : "")"
                             @onclick="() => SetTaskSection(TaskSection.Tasks)">
                         <span class="tab-icon">&#128203;</span> Tasks
-                        @if (AllUnscheduledTasks.Any())
+                        @if (AllDayTasks.Any())
                         {
-                            <span class="tab-count">@AllUnscheduledTasks.Count</span>
+                            <span class="tab-count">@AllDayTasks.Count</span>
                         }
                     </button>
                     <button class="section-tab @(ActiveTaskSection == TaskSection.Waiting ? "active" : "")"
@@ -646,9 +646,9 @@
                 @if (ActiveTaskSection == TaskSection.Tasks)
                 {
                     <div class="allday-section">
-                        @if (AllUnscheduledTasks.Any())
+                        @if (AllDayTasks.Any())
                         {
-                            @foreach (var task in AllUnscheduledTasks)
+                            @foreach (var task in AllDayTasks)
                             {
                                 var isPast = IsTaskInPast(task);
                                 <div class="task-row @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "") @(DraggingTaskId == task.Id ? "dragging" : "") @(!isPast && !task.IsCompleted ? "draggable-task" : "")"
@@ -795,7 +795,7 @@
                     </div>
                 }
 
-                @if (!ScheduledTasks.Any() && !AllUnscheduledTasks.Any() && !OverdueTasks.Any())
+                @if (!ScheduledTasks.Any() && !AllDayTasks.Any() && !OverdueTasks.Any())
                 {
                     <div class="no-tasks">No tasks for this day. Add one above!</div>
                 }
@@ -3350,7 +3350,7 @@
             var taskId = DraggingTaskId.Value;
 
             // Check if task is from a different date (overdue or future) - move it to selected date
-            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId) ?? AllUnscheduledTasks.FirstOrDefault(t => t.Id == taskId);
+            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId);
             if (task != null && task.TaskDate.Date != SelectedDate.Date)
             {
                 // Move task to selected date first
@@ -3392,7 +3392,7 @@
             var scheduledTime = new TimeSpan(hour, 0, 0);
 
             // Check if task is from a different date (overdue or future) - move it to selected date
-            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId) ?? AllUnscheduledTasks.FirstOrDefault(t => t.Id == taskId);
+            var task = Tasks.FirstOrDefault(t => t.Id == taskId) ?? OverdueTasks.FirstOrDefault(t => t.Id == taskId);
             if (task != null && task.TaskDate.Date != SelectedDate.Date)
             {
                 // Move task to selected date first

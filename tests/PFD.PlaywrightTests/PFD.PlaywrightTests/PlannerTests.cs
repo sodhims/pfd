@@ -989,4 +989,130 @@ public class PlannerTests : PageTest
 
         Console.WriteLine("Tasks and Waiting persistence test completed");
     }
+
+    [Test]
+    public async Task AddTask_ShouldAppearInTasksTab_Immediately()
+    {
+        Console.WriteLine("Testing that newly added task appears in Tasks tab immediately");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Click on Tasks tab first and count existing tasks
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        var taskRows = Page.Locator(".allday-section .task-row");
+        var initialCount = await taskRows.CountAsync();
+        Console.WriteLine($"Initial task count in Tasks tab: {initialCount}");
+
+        // Add a new task with unique name
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var uniqueTaskTitle = $"Visibility Test {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(uniqueTaskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Click on Tasks tab again to refresh view
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(1000);
+        }
+
+        // Count tasks again - should be one more
+        var newCount = await taskRows.CountAsync();
+        Console.WriteLine($"Task count after adding: {newCount}");
+
+        Assert.That(newCount, Is.GreaterThan(initialCount),
+            $"Task count should increase after adding task. Before: {initialCount}, After: {newCount}");
+
+        // Verify the specific task title exists
+        var newTask = Page.Locator($".allday-section .task-row:has-text('{uniqueTaskTitle}')");
+        var foundTask = await newTask.CountAsync();
+        Console.WriteLine($"Found task with title '{uniqueTaskTitle}': {foundTask > 0}");
+
+        Assert.That(foundTask, Is.GreaterThan(0),
+            $"Newly added task '{uniqueTaskTitle}' should appear in Tasks tab");
+
+        Console.WriteLine("Task visibility test PASSED");
+    }
+
+    [Test]
+    public async Task Search_ShouldFindTask_ThatAppearsInTasksTab()
+    {
+        Console.WriteLine("Testing that search finds tasks that also appear in Tasks tab");
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Add a task with unique searchable name
+        var taskInput = Page.Locator(".add-task input[type='text']").First;
+        await Expect(taskInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var uniqueTaskTitle = $"SearchMatch {DateTime.Now:HHmmss}";
+        await taskInput.FillAsync(uniqueTaskTitle);
+        await Page.Keyboard.PressAsync("Enter");
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Verify task appears in Tasks tab
+        var tasksTab = Page.Locator(".task-section-tabs .section-tab:has-text('Tasks')");
+        if (await tasksTab.CountAsync() > 0)
+        {
+            await tasksTab.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        var taskInList = Page.Locator($".allday-section .task-row:has-text('{uniqueTaskTitle}')");
+        var inListCount = await taskInList.CountAsync();
+        Console.WriteLine($"Task in Tasks tab: {inListCount > 0}");
+
+        // Now use search to find it
+        var searchBtn = Page.Locator(".search-btn");
+        if (await searchBtn.CountAsync() > 0)
+        {
+            await searchBtn.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        var searchInput = Page.Locator(".search-input");
+        await Expect(searchInput).ToBeVisibleAsync(new() { Timeout = 5000 });
+        await searchInput.FillAsync("SearchMatch");
+
+        var searchExecuteBtn = Page.Locator(".search-execute-btn");
+        await searchExecuteBtn.ClickAsync();
+        await Page.WaitForTimeoutAsync(3000);
+
+        // Check search results
+        var searchResults = Page.Locator(".search-result-item");
+        var resultCount = await searchResults.CountAsync();
+        Console.WriteLine($"Search results found: {resultCount}");
+
+        // Both should find the task - if search finds it but Tasks tab doesn't, that's a bug
+        if (resultCount > 0 && inListCount == 0)
+        {
+            Assert.Fail("BUG: Search found task but Tasks tab did not display it!");
+        }
+
+        Assert.That(inListCount, Is.GreaterThan(0),
+            "Task should appear in Tasks tab");
+
+        Console.WriteLine("Search and Tasks tab consistency test completed");
+    }
 }
