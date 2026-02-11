@@ -6941,9 +6941,64 @@
         order: 2;
     }
 
-    /* Hide resize handle and day roller on medium phones */
-    .panel-resize-handle,
+    /* Hide resize handle on medium phones */
+    .panel-resize-handle {
+        display: none !important;
+    }
+
+    /* Show day roller as horizontal strip at bottom */
     .day-roller-wrapper {
+        display: flex !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: unset !important;
+        flex-direction: row !important;
+        min-height: 70px !important;
+        max-height: 70px !important;
+        height: 70px !important;
+        order: 3;
+        padding: 8px 0;
+        background: var(--frame-bg);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .day-roller {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        height: 54px !important;
+        border-radius: 6px;
+        flex-direction: row !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+    }
+
+    .day-roller-track {
+        flex-direction: row !important;
+        width: auto !important;
+        height: 100% !important;
+        gap: 4px;
+    }
+
+    .day-slot {
+        width: 48px !important;
+        min-width: 48px !important;
+        height: 48px !important;
+        flex-shrink: 0;
+        font-size: 11px;
+    }
+
+    .day-slot .day-name {
+        font-size: 9px;
+    }
+
+    .day-slot .day-number {
+        font-size: 14px;
+    }
+
+    /* Hide the time tasks panel in day roller on mobile */
+    .time-tasks-panel {
         display: none !important;
     }
 
