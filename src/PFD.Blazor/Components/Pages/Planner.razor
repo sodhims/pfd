@@ -143,7 +143,7 @@
             }
             <!-- Manage Credentials Section -->
             <div class="setting-group credentials-section">
-                <button class="credentials-toggle-btn" @onclick="ToggleCredentialsSection">
+                <button type="button" class="credentials-toggle-btn" @onclick="ToggleCredentialsSection" @onclick:stopPropagation="true">
                     <span class="cred-icon">&#128273;</span>
                     <span>Manage Credentials</span>
                     <span class="toggle-arrow @(ShowCredentialsSection ? "open" : "")">&#9662;</span>

@@ -6797,8 +6797,17 @@
     .left-panel {
         width: 100% !important;
         max-width: 100% !important;
-        max-height: none;
+        max-height: none !important;
+        overflow-y: visible !important;
         flex-shrink: 0;
+    }
+
+    .settings-section {
+        overflow: visible !important;
+    }
+
+    .credentials-section {
+        overflow: visible !important;
     }
 
     .center-panel {
@@ -6918,7 +6927,8 @@
     .left-panel {
         width: 100% !important;
         max-width: 100% !important;
-        max-height: none;
+        max-height: none !important;
+        overflow-y: visible !important;
         flex-direction: column;
         flex-shrink: 0;
         order: 1;
@@ -6930,6 +6940,11 @@
 
     .settings-section {
         width: 100%;
+        overflow: visible !important;
+    }
+
+    .credentials-section {
+        overflow: visible !important;
     }
 
     .center-panel {
