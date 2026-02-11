@@ -62,7 +62,9 @@ public class PfdDbContext : DbContext
                 { "RecurrenceInterval", "INT NOT NULL DEFAULT 1" },
                 { "RecurrenceDays", "NVARCHAR(50) NULL" },
                 { "RecurrenceEndDate", "DATETIME2 NULL" },
-                { "RecurrenceParentId", "INT NULL" }
+                { "RecurrenceParentId", "INT NULL" },
+                { "IsStarted", "BIT NOT NULL DEFAULT 0" },
+                { "StartedAt", "DATETIME2 NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -387,7 +389,9 @@ public class PfdDbContext : DbContext
                 { "RecurrenceInterval", "INTEGER NOT NULL DEFAULT 1" },
                 { "RecurrenceDays", "TEXT NULL" },
                 { "RecurrenceEndDate", "TEXT NULL" },
-                { "RecurrenceParentId", "INTEGER NULL" }
+                { "RecurrenceParentId", "INTEGER NULL" },
+                { "IsStarted", "INTEGER NOT NULL DEFAULT 0" },
+                { "StartedAt", "TEXT NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -692,6 +696,7 @@ public class PfdDbContext : DbContext
         modelBuilder.Entity<DailyTask>(entity =>
         {
             entity.HasIndex(e => e.TaskDate);
+            entity.HasIndex(e => e.IsStarted);
             entity.HasIndex(e => e.IsCompleted);
             entity.HasIndex(e => e.UserId);
             entity.HasIndex(e => e.ParentTaskId);

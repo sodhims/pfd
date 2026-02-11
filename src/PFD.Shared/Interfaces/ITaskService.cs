@@ -12,6 +12,7 @@ public interface ITaskService
     Task<DailyTask> UpdateTaskAsync(DailyTask task);
     Task DeleteTaskAsync(int id, int userId);
     Task<DailyTask> ToggleCompletionAsync(int id, int userId);
+    Task<DailyTask> ToggleStartedAsync(int id, int userId);
     Task RescheduleTaskAsync(int taskId, DateTime newDate, int userId);
     Task ScheduleTaskTimeAsync(int taskId, TimeSpan? time, int userId, int durationMinutes = 30);
     Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30);

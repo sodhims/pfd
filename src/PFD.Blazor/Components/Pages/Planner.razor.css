@@ -4427,6 +4427,26 @@
     opacity: 1;
 }
 
+/* Started/Completed checkboxes */
+.started-cb {
+    accent-color: #ff9800;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+.completed-cb {
+    accent-color: #4caf50;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
+
+.task-row .started-cb:checked + .completed-cb:not(:checked) ~ .task-title {
+    color: #ff9800;
+    font-style: italic;
+}
+
 /* Recurring task flag */
 .recurring-flag {
     font-size: 0.85em;

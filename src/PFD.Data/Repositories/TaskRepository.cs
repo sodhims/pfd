@@ -154,6 +154,24 @@ public class TaskRepository
         return task;
     }
 
+    public async Task<DailyTask?> ToggleStartedAsync(int id, int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
+
+        var task = await context.DailyTasks
+            .FirstOrDefaultAsync(t => t.Id == id &&
+                (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))));
+        if (task != null)
+        {
+            task.IsStarted = !task.IsStarted;
+            task.StartedAt = task.IsStarted ? DateTime.UtcNow : null;
+            task.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync();
+        }
+        return task;
+    }
+
     public async Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();

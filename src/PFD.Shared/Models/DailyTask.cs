@@ -28,6 +28,10 @@ public class DailyTask
     [Required]
     public DateTime TaskDate { get; set; }
 
+    public bool IsStarted { get; set; } = false;
+
+    public DateTime? StartedAt { get; set; }
+
     public bool IsCompleted { get; set; } = false;
 
     public DateTime? CompletedAt { get; set; }

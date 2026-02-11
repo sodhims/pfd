@@ -489,7 +489,8 @@
                         {
                             var isPast = IsTaskInPast(task);
                             <div class="task-row scheduled @(task.IsCompleted ? "completed" : "") @(EditingTaskId == task.Id ? "editing" : "") @(isPast ? "past" : "")">
-                                <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" />
+                                <input type="checkbox" class="started-cb" checked="@task.IsStarted" @onchange="() => ToggleStarted(task)" disabled="@isPast" title="Started" />
+                                    <input type="checkbox" class="completed-cb" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" disabled="@isPast" title="Completed" />
                                 <span class="task-time @(isPast ? "readonly" : "")" @onclick="() => OpenTimeEditor(task)">
                                     @FormatTime(task.ScheduledTime)
                                 </span>
@@ -710,7 +711,8 @@
                                     {
                                         <span class="drag-handle" title="Drag to schedule">&#9776;</span>
                                     }
-                                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
+                                    <input type="checkbox" class="started-cb" checked="@task.IsStarted" @onchange="() => ToggleStartedOverdue(task)" title="Started" />
+                                    <input type="checkbox" class="completed-cb" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" title="Completed" />
                                     @if (task.ScheduledTime.HasValue)
                                     {
                                         <span class="task-time waiting-time" title="Originally scheduled for @FormatTime(task.ScheduledTime)">
@@ -743,7 +745,8 @@
                     var isPast = IsTaskInPast(task);
                     <div class="task-row @(task.IsCompleted ? "completed" : "") @(isPast ? "past" : "")"
                          @ondblclick="() => OpenTimeEditor(task)">
-                        <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" disabled="@isPast" />
+                        <input type="checkbox" class="started-cb" checked="@task.IsStarted" @onchange="() => ToggleStartedWeekly(task)" disabled="@isPast" title="Started" />
+                        <input type="checkbox" class="completed-cb" checked="@task.IsCompleted" @onchange="() => ToggleWeeklyTask(task)" disabled="@isPast" title="Completed" />
                         @if (EditingTaskId == task.Id)
                         {
                             <input type="text" class="task-edit" @bind="EditingTaskText"
@@ -2334,6 +2337,12 @@
         await LoadTasksAsync();
     }
 
+    private async Task ToggleStarted(DailyTask task)
+    {
+        await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
+        await LoadTasksAsync();
+    }
+
     private async Task ToggleTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
@@ -2346,6 +2355,12 @@
         await LoadTasksAsync();
     }
 
+    private async Task ToggleStartedWeekly(DailyTask task)
+    {
+        await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
+        await LoadTasksAsync();
+    }
+
     private async Task ToggleWeeklyTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
@@ -2355,6 +2370,12 @@
     private async Task DeleteWeeklyTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
+        await LoadTasksAsync();
+    }
+
+    private async Task ToggleStartedOverdue(DailyTask task)
+    {
+        await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
         await LoadTasksAsync();
     }
 

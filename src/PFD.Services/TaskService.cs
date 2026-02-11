@@ -54,6 +54,12 @@ public class TaskService : ITaskService
         return task ?? throw new InvalidOperationException($"Task {id} not found");
     }
 
+    public async Task<DailyTask> ToggleStartedAsync(int id, int userId)
+    {
+        var task = await _taskRepository.ToggleStartedAsync(id, userId);
+        return task ?? throw new InvalidOperationException($"Task {id} not found");
+    }
+
     public async Task RescheduleTaskAsync(int taskId, DateTime newDate, int userId)
     {
         var task = await _taskRepository.GetByIdAsync(taskId, userId);
