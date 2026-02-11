@@ -611,6 +611,10 @@
                                               @ondblclick="() => StartEditTask(task)"
                                               @ondblclick:stopPropagation="true">@task.Title</span>
                                     }
+                                    @if (task.RecurrenceType != RecurrenceType.None)
+                                    {
+                                        <span class="recurring-flag" title="Recurring: @task.RecurrenceType">&#128257;</span>
+                                    }
                                     @if (task.Participants.Any())
                                     {
                                         <div class="task-participants">
@@ -888,6 +892,10 @@
                                         }
                                         <span class="t-time">@FormatTime(task.ScheduledTime)</span>
                                         <span class="t-title">@task.Title</span>
+                                        @if (task.RecurrenceType != RecurrenceType.None)
+                                        {
+                                            <span class="t-recurring">&#128257;</span>
+                                        }
                                         <span class="t-src pfd">P</span>
                                     </div>
                                 }

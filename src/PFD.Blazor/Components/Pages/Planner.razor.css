@@ -4427,6 +4427,20 @@
     opacity: 1;
 }
 
+/* Recurring task flag */
+.recurring-flag {
+    font-size: 0.85em;
+    color: #2e7d32;
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.t-recurring {
+    font-size: 0.75em;
+    color: #2e7d32;
+    flex-shrink: 0;
+}
+
 /* Group Modal */
 .group-modal {
     background: var(--task-list-bg);
