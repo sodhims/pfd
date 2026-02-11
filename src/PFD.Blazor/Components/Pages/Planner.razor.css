@@ -4447,18 +4447,94 @@
     font-style: italic;
 }
 
-/* Recurring task flag */
+/* Recurring task flag - base styles */
 .recurring-flag {
     font-size: 0.85em;
-    color: #2e7d32;
     flex-shrink: 0;
     margin-left: 4px;
+    font-weight: bold;
 }
 
 .t-recurring {
     font-size: 0.75em;
-    color: #2e7d32;
     flex-shrink: 0;
+    font-weight: bold;
+}
+
+/* Recurring flag colors per theme - contrasting colors */
+.theme-teal .recurring-flag,
+.theme-teal .t-recurring {
+    color: #FF6B00; /* Orange contrasts with teal */
+}
+
+.theme-red .recurring-flag,
+.theme-red .t-recurring {
+    color: #00BCD4; /* Cyan contrasts with red */
+}
+
+.theme-orange .recurring-flag,
+.theme-orange .t-recurring {
+    color: #673AB7; /* Purple contrasts with orange */
+}
+
+.theme-yellow .recurring-flag,
+.theme-yellow .t-recurring {
+    color: #9C27B0; /* Purple contrasts with yellow */
+}
+
+.theme-blue .recurring-flag,
+.theme-blue .t-recurring {
+    color: #FF9800; /* Orange/yellow contrasts with blue */
+}
+
+.theme-dark .recurring-flag,
+.theme-dark .t-recurring {
+    color: #00E676; /* Bright green stands out on dark */
+}
+
+.theme-light .recurring-flag,
+.theme-light .t-recurring {
+    color: #E91E63; /* Pink stands out on light */
+}
+
+.theme-preppy .recurring-flag,
+.theme-preppy .t-recurring {
+    color: #FFD700; /* Gold contrasts with preppy navy/pink */
+}
+
+.theme-tropical .recurring-flag,
+.theme-tropical .t-recurring {
+    color: #FF1744; /* Red contrasts with tropical greens */
+}
+
+.theme-nordic .recurring-flag,
+.theme-nordic .t-recurring {
+    color: #FF6D00; /* Orange contrasts with nordic blues */
+}
+
+.theme-pinkish .recurring-flag,
+.theme-pinkish .t-recurring {
+    color: #00ACC1; /* Teal contrasts with pink */
+}
+
+.theme-bigly .recurring-flag,
+.theme-bigly .t-recurring {
+    color: #FFD700; /* Gold on patriotic theme */
+}
+
+.theme-ughly .recurring-flag,
+.theme-ughly .t-recurring {
+    color: #FF00FF; /* Magenta for ugly theme */
+}
+
+.theme-vampire .recurring-flag,
+.theme-vampire .t-recurring {
+    color: #00FF00; /* Bright green on vampire dark red */
+}
+
+.theme-greek .recurring-flag,
+.theme-greek .t-recurring {
+    color: #FF5722; /* Deep orange on greek blue/white */
 }
 
 /* Group Modal */

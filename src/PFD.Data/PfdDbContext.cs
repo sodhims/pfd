@@ -64,7 +64,10 @@ public class PfdDbContext : DbContext
                 { "RecurrenceEndDate", "DATETIME2 NULL" },
                 { "RecurrenceParentId", "INT NULL" },
                 { "IsStarted", "BIT NOT NULL DEFAULT 0" },
-                { "StartedAt", "DATETIME2 NULL" }
+                { "StartedAt", "DATETIME2 NULL" },
+                { "ActualStartTime", "DATETIME2 NULL" },
+                { "ActualEndTime", "DATETIME2 NULL" },
+                { "TotalMinutesWorked", "INT NOT NULL DEFAULT 0" }
             };
 
             foreach (var column in columnsToAdd)
@@ -391,7 +394,10 @@ public class PfdDbContext : DbContext
                 { "RecurrenceEndDate", "TEXT NULL" },
                 { "RecurrenceParentId", "INTEGER NULL" },
                 { "IsStarted", "INTEGER NOT NULL DEFAULT 0" },
-                { "StartedAt", "TEXT NULL" }
+                { "StartedAt", "TEXT NULL" },
+                { "ActualStartTime", "TEXT NULL" },
+                { "ActualEndTime", "TEXT NULL" },
+                { "TotalMinutesWorked", "INTEGER NOT NULL DEFAULT 0" }
             };
 
             foreach (var column in columnsToAdd)

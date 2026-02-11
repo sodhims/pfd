@@ -148,6 +148,25 @@ public class TaskRepository
         {
             task.IsCompleted = !task.IsCompleted;
             task.CompletedAt = task.IsCompleted ? DateTime.UtcNow : null;
+
+            // Track actual work end time and calculate total minutes for data mining
+            if (task.IsCompleted)
+            {
+                task.ActualEndTime = DateTime.UtcNow;
+
+                // If task was started, calculate final work session
+                if (task.ActualStartTime.HasValue)
+                {
+                    var minutesWorked = (int)(DateTime.UtcNow - task.ActualStartTime.Value).TotalMinutes;
+                    task.TotalMinutesWorked += minutesWorked;
+                }
+            }
+            else
+            {
+                // Un-completing: clear end time but keep total minutes worked
+                task.ActualEndTime = null;
+            }
+
             task.UpdatedAt = DateTime.UtcNow;
             await context.SaveChangesAsync();
         }
@@ -166,6 +185,20 @@ public class TaskRepository
         {
             task.IsStarted = !task.IsStarted;
             task.StartedAt = task.IsStarted ? DateTime.UtcNow : null;
+
+            // Track actual work start time for data mining
+            if (task.IsStarted)
+            {
+                task.ActualStartTime = DateTime.UtcNow;
+            }
+            else if (task.ActualStartTime.HasValue)
+            {
+                // If un-starting, calculate time worked and add to total
+                var minutesWorked = (int)(DateTime.UtcNow - task.ActualStartTime.Value).TotalMinutes;
+                task.TotalMinutesWorked += minutesWorked;
+                task.ActualStartTime = null;
+            }
+
             task.UpdatedAt = DateTime.UtcNow;
             await context.SaveChangesAsync();
         }

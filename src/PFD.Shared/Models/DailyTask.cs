@@ -36,6 +36,21 @@ public class DailyTask
 
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>
+    /// Actual time the user started working on this task (for data mining)
+    /// </summary>
+    public DateTime? ActualStartTime { get; set; }
+
+    /// <summary>
+    /// Actual time the user finished working on this task (for data mining)
+    /// </summary>
+    public DateTime? ActualEndTime { get; set; }
+
+    /// <summary>
+    /// Total time spent working on task in minutes (accumulated if worked on multiple times)
+    /// </summary>
+    public int TotalMinutesWorked { get; set; } = 0;
+
     public TaskType TaskType { get; set; } = TaskType.General;
 
     /// <summary>
