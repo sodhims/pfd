@@ -60,6 +60,11 @@ public class TaskService : ITaskService
         return task ?? throw new InvalidOperationException($"Task {id} not found");
     }
 
+    public async Task<int> KickForwardInProgressTasksAsync(int userId)
+    {
+        return await _taskRepository.KickForwardInProgressTasksAsync(userId);
+    }
+
     public async Task RescheduleTaskAsync(int taskId, DateTime newDate, int userId)
     {
         var task = await _taskRepository.GetByIdAsync(taskId, userId);

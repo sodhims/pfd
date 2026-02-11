@@ -2056,6 +2056,13 @@
             // Check if notification service is available
             await CheckNotificationServiceAvailability();
 
+            // Auto kick-forward in-progress tasks from past days to today
+            var kickedCount = await TaskService.KickForwardInProgressTasksAsync(CurrentUserId);
+            if (kickedCount > 0)
+            {
+                Console.WriteLine($"Kicked forward {kickedCount} in-progress tasks to today");
+            }
+
             await LoadTasksAsync();
 
             // Parse task actions in background if Ollama available

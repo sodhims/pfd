@@ -172,6 +172,30 @@ public class TaskRepository
         return task;
     }
 
+    public async Task<int> KickForwardInProgressTasksAsync(int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var today = DateTime.Today;
+
+        // Find all tasks that are started but not completed, from past dates
+        var inProgressTasks = await context.DailyTasks
+            .Where(t => t.UserId == userId &&
+                        t.IsStarted &&
+                        !t.IsCompleted &&
+                        t.TaskDate.Date < today)
+            .ToListAsync();
+
+        foreach (var task in inProgressTasks)
+        {
+            task.TaskDate = today;
+            task.ScheduledTime = null; // Clear scheduled time, user can reschedule
+            task.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await context.SaveChangesAsync();
+        return inProgressTasks.Count;
+    }
+
     public async Task<List<DailyTask>> GetRecentTasksAsync(int userId, int days = 30)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
