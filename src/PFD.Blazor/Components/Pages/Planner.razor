@@ -856,7 +856,7 @@
             <div class="day-roller">
                 <button class="day-nav-btn up" @onclick="PrevDay" title="Previous Day">&#9650;</button>
 
-                <div class="day-roller-track"
+                <div class="day-roller-track" @ref="dayRollerTrackRef"
                      @onmousedown="OnRollerMouseDown"
                      @onmousemove="OnRollerMouseMove"
                      @onmouseup="OnRollerMouseUp"
@@ -865,6 +865,7 @@
                      @ontouchmove="OnRollerTouchMove"
                      @ontouchend="OnRollerTouchEnd"
                      @onwheel="OnRollerWheel"
+                     @onscroll="OnHorizontalRollerScroll"
                      style="transform: translateY(@(rollerOffset)px);">
                     @for (int offset = -7; offset <= 7; offset++)
                     {
@@ -878,6 +879,7 @@
 
                         <div class="day-slot @(isToday ? "today" : "") @(isSelected ? "selected" : "") @(isWeekend ? "weekend" : "")"
                              style="opacity: @opacity.ToString("F2"); cursor: pointer;"
+                             data-date="@displayDate.ToString("yyyy-MM-dd")"
                              @onclick="() => SelectDateFromRoller(displayDate)"
                              @onclick:stopPropagation="true">
                             <span class="day-name">@displayDate.ToString("ddd")</span>
@@ -1856,12 +1858,17 @@
     private ElementReference syncedTasksRef;
     private bool isSyncingScroll = false;
 
+    // Day roller for horizontal scroll on mobile
+    private ElementReference dayRollerTrackRef;
+    private System.Timers.Timer? _scrollDebounceTimer;
+
     // Day roller drag state
     private bool isDragging = false;
     private double dragStartY = 0;
     private double rollerOffset = 0;
     private double totalDragDistance = 0;
     private const double SlotHeight = 55;
+    private const double SlotWidth = 60; // Width of each day slot for horizontal scroll
     private string EditingTaskText { get; set; } = "";
     private DailyTask? EditingTask { get; set; }
 
@@ -2971,6 +2978,48 @@
         var dayChange = e.DeltaY > 0 ? 1 : -1;
         SelectedDate = SelectedDate.AddDays(dayChange);
         await LoadTasksAsync();
+    }
+
+    // Horizontal scroll handler for mobile day roller
+    private async Task OnHorizontalRollerScroll()
+    {
+        // Debounce scroll events - wait for scroll to stop
+        _scrollDebounceTimer?.Stop();
+        _scrollDebounceTimer?.Dispose();
+
+        _scrollDebounceTimer = new System.Timers.Timer(150); // 150ms debounce
+        _scrollDebounceTimer.Elapsed += async (s, e) =>
+        {
+            _scrollDebounceTimer?.Stop();
+            await InvokeAsync(async () =>
+            {
+                await DetectCenteredDateAsync();
+            });
+        };
+        _scrollDebounceTimer.AutoReset = false;
+        _scrollDebounceTimer.Start();
+    }
+
+    private async Task DetectCenteredDateAsync()
+    {
+        try
+        {
+            // Use JS to find which date slot is centered
+            var centeredDateStr = await JSRuntime.InvokeAsync<string>("getCenteredDate", dayRollerTrackRef);
+            if (!string.IsNullOrEmpty(centeredDateStr) && DateTime.TryParse(centeredDateStr, out var centeredDate))
+            {
+                if (centeredDate.Date != SelectedDate.Date)
+                {
+                    SelectedDate = centeredDate;
+                    await LoadTasksAsync();
+                    StateHasChanged();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore JS interop errors on non-mobile views
+        }
     }
 
     private async Task OnTimeRollerScroll()

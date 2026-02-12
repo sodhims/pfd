@@ -17,6 +17,47 @@ window.scrollToHour = function (timeRoller, tasksPanel, hour) {
     }
 };
 
+// Get the date of the day-slot that is centered in the horizontal day roller
+window.getCenteredDate = function (dayRollerTrack) {
+    if (!dayRollerTrack) return null;
+
+    const container = dayRollerTrack;
+    const containerRect = container.getBoundingClientRect();
+    const centerX = containerRect.left + containerRect.width / 2;
+
+    // Find all day-slot elements
+    const slots = container.querySelectorAll('.day-slot');
+    let closestSlot = null;
+    let closestDistance = Infinity;
+
+    slots.forEach(slot => {
+        const slotRect = slot.getBoundingClientRect();
+        const slotCenterX = slotRect.left + slotRect.width / 2;
+        const distance = Math.abs(centerX - slotCenterX);
+
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestSlot = slot;
+        }
+    });
+
+    if (closestSlot) {
+        return closestSlot.getAttribute('data-date');
+    }
+
+    return null;
+};
+
+// Scroll the day roller to center on a specific date
+window.scrollDayRollerToDate = function (dayRollerTrack, dateStr) {
+    if (!dayRollerTrack) return;
+
+    const slot = dayRollerTrack.querySelector(`[data-date="${dateStr}"]`);
+    if (slot) {
+        slot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+};
+
 window.settingsInterop = {
     getDeviceId: function () {
         let deviceId = localStorage.getItem('pfd_device_id');
