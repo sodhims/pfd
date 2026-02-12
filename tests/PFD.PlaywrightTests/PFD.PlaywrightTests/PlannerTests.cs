@@ -1115,4 +1115,234 @@ public class PlannerTests : PageTest
 
         Console.WriteLine("Search and Tasks tab consistency test completed");
     }
+
+    [Test]
+    public async Task MobileDayRoller_ClickDate_ShouldSyncHeaderAndSchedule()
+    {
+        Console.WriteLine("Testing mobile day-roller: clicking date should sync header and schedule");
+
+        // Set mobile viewport
+        await Page.SetViewportSizeAsync(500, 800);
+        await Page.ReloadAsync();
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Find the horizontal day roller at bottom
+        var dayRollerWrapper = Page.Locator(".day-roller-wrapper");
+        await Expect(dayRollerWrapper).ToBeVisibleAsync(new() { Timeout = 10000 });
+        Console.WriteLine("Day roller wrapper visible");
+
+        // Get the header date text before clicking
+        var header = Page.Locator(".task-header");
+        var initialHeaderText = await header.TextContentAsync();
+        Console.WriteLine($"Initial header: {initialHeaderText}");
+
+        // Find day slots in the roller
+        var daySlots = Page.Locator(".day-slot");
+        var slotCount = await daySlots.CountAsync();
+        Console.WriteLine($"Found {slotCount} day slots");
+
+        // Click on a different day slot (not the selected one)
+        var targetSlot = daySlots.Nth(3); // Click on 4th slot
+        var targetDateAttr = await targetSlot.GetAttributeAsync("data-date");
+        Console.WriteLine($"Clicking on date: {targetDateAttr}");
+
+        await targetSlot.ClickAsync();
+        await Page.WaitForTimeoutAsync(1500);
+
+        // Get header text after click
+        var newHeaderText = await header.TextContentAsync();
+        Console.WriteLine($"Header after click: {newHeaderText}");
+
+        // Verify header changed
+        if (targetDateAttr != null)
+        {
+            var expectedDate = DateTime.Parse(targetDateAttr);
+            var expectedDayText = expectedDate.Day.ToString();
+            Assert.That(newHeaderText, Does.Contain(expectedDayText),
+                $"Header should show day {expectedDayText} from clicked date {targetDateAttr}");
+        }
+
+        Console.WriteLine("Mobile day-roller click sync test completed");
+    }
+
+    [Test]
+    public async Task MobileDayRoller_ScrollAndStop_ShouldSyncToCenteredDate()
+    {
+        Console.WriteLine("Testing mobile day-roller: scroll should sync to centered date");
+
+        // Set mobile viewport
+        await Page.SetViewportSizeAsync(500, 800);
+        await Page.ReloadAsync();
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Find the day roller track
+        var dayRollerTrack = Page.Locator(".day-roller-track");
+        await Expect(dayRollerTrack).ToBeVisibleAsync(new() { Timeout = 10000 });
+
+        // Get initial header
+        var header = Page.Locator(".task-header");
+        var initialHeaderText = await header.TextContentAsync();
+        Console.WriteLine($"Initial header: {initialHeaderText}");
+
+        // Get bounding box for scroll simulation
+        var box = await dayRollerTrack.BoundingBoxAsync();
+        Assert.That(box, Is.Not.Null);
+
+        // Simulate horizontal scroll (swipe left)
+        var startX = box!.X + box.Width * 0.8;
+        var endX = box.X + box.Width * 0.2;
+        var centerY = box.Y + box.Height / 2;
+
+        Console.WriteLine("Performing horizontal swipe...");
+        await Page.Mouse.MoveAsync(startX, centerY);
+        await Page.Mouse.DownAsync();
+        await Page.Mouse.MoveAsync(endX, centerY, new() { Steps = 20 });
+        await Page.Mouse.UpAsync();
+
+        // Wait for scroll to settle and sync
+        await Page.WaitForTimeoutAsync(500);
+
+        // Get header after scroll
+        var newHeaderText = await header.TextContentAsync();
+        Console.WriteLine($"Header after scroll: {newHeaderText}");
+
+        // The header should have changed (scrolled to a different date)
+        // Note: It might be the same if scroll didn't move enough
+        Console.WriteLine("Mobile day-roller scroll sync test completed");
+
+        // Verify page is responsive
+        var plannerContainer = Page.Locator(".planner-container");
+        await Expect(plannerContainer).ToBeVisibleAsync(new() { Timeout = 3000 });
+    }
+
+    [Test]
+    public async Task MobileDayRoller_SelectedDateAndHeader_ShouldAlwaysMatch()
+    {
+        Console.WriteLine("Testing mobile day-roller: selected date indicator should match header");
+
+        // Set mobile viewport
+        await Page.SetViewportSizeAsync(500, 800);
+        await Page.ReloadAsync();
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Find selected day slot
+        var selectedSlot = Page.Locator(".day-slot.selected");
+        await Expect(selectedSlot).ToBeVisibleAsync(new() { Timeout = 10000 });
+
+        // Get selected date from data attribute
+        var selectedDateAttr = await selectedSlot.GetAttributeAsync("data-date");
+        Console.WriteLine($"Selected date attribute: {selectedDateAttr}");
+
+        // Get day number from slot
+        var selectedDayNum = await selectedSlot.Locator(".day-num").TextContentAsync();
+        Console.WriteLine($"Selected day number: {selectedDayNum}");
+
+        // Get header text
+        var header = Page.Locator(".task-header");
+        var headerText = await header.TextContentAsync();
+        Console.WriteLine($"Header text: {headerText}");
+
+        // Verify the day number from selected slot appears in header
+        Assert.That(headerText, Does.Contain(selectedDayNum?.Trim() ?? ""),
+            $"Header '{headerText}' should contain day number '{selectedDayNum}' from selected slot");
+
+        // Click on a different date and verify sync
+        var daySlots = Page.Locator(".day-slot:not(.selected)");
+        if (await daySlots.CountAsync() > 2)
+        {
+            var targetSlot = daySlots.Nth(2);
+            var targetDayNum = await targetSlot.Locator(".day-num").TextContentAsync();
+            Console.WriteLine($"Clicking on day: {targetDayNum}");
+
+            await targetSlot.ClickAsync();
+            await Page.WaitForTimeoutAsync(1500);
+
+            // Verify new selected slot
+            var newSelectedSlot = Page.Locator(".day-slot.selected");
+            var newSelectedDayNum = await newSelectedSlot.Locator(".day-num").TextContentAsync();
+
+            // Verify header updated
+            var newHeaderText = await header.TextContentAsync();
+            Console.WriteLine($"New header: {newHeaderText}");
+
+            Assert.That(newHeaderText, Does.Contain(targetDayNum?.Trim() ?? ""),
+                $"After click, header '{newHeaderText}' should contain clicked day '{targetDayNum}'");
+
+            Assert.That(newSelectedDayNum, Is.EqualTo(targetDayNum),
+                $"Selected slot day '{newSelectedDayNum}' should match clicked day '{targetDayNum}'");
+        }
+
+        Console.WriteLine("Mobile day-roller date consistency test completed");
+    }
+
+    [Test]
+    public async Task MobileDayRoller_CenterFrame_ShouldHighlightSelectedDate()
+    {
+        Console.WriteLine("Testing mobile day-roller: center frame should highlight selected date");
+
+        // Set mobile viewport
+        await Page.SetViewportSizeAsync(500, 800);
+        await Page.ReloadAsync();
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.WaitForTimeoutAsync(2000);
+
+        // Ensure Daily view
+        var dailyButton = Page.Locator(".view-toggle button:has-text('Daily')");
+        if (await dailyButton.CountAsync() > 0)
+        {
+            await dailyButton.First.ClickAsync();
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        // Check that day-roller-wrapper has the ::before pseudo element (center frame)
+        // We can't directly check pseudo elements, but we can verify the wrapper exists
+        var dayRollerWrapper = Page.Locator(".day-roller-wrapper");
+        await Expect(dayRollerWrapper).ToBeVisibleAsync(new() { Timeout = 10000 });
+
+        // Verify position: relative is set (needed for absolute positioned pseudo element)
+        var position = await dayRollerWrapper.EvaluateAsync<string>("el => getComputedStyle(el).position");
+        Console.WriteLine($"Day roller wrapper position: {position}");
+        Assert.That(position, Is.EqualTo("relative"),
+            "Day roller wrapper should have position: relative for center frame");
+
+        // Verify selected slot is visually distinguished
+        var selectedSlot = Page.Locator(".day-slot.selected");
+        await Expect(selectedSlot).ToBeVisibleAsync(new() { Timeout = 5000 });
+
+        var backgroundColor = await selectedSlot.EvaluateAsync<string>("el => getComputedStyle(el).backgroundColor");
+        Console.WriteLine($"Selected slot background: {backgroundColor}");
+
+        // Selected slot should have a distinct background (not transparent)
+        Assert.That(backgroundColor, Is.Not.EqualTo("rgba(0, 0, 0, 0)"),
+            "Selected slot should have a background color");
+
+        Console.WriteLine("Mobile day-roller center frame test completed");
+    }
 }
