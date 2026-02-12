@@ -1834,6 +1834,11 @@
     private List<CalendarDay> CalendarDays { get; set; } = new();
     private bool _isLoadingTasks = false; // Prevents concurrent DB calls
 
+    // Task cache for instant date switching (±7 days)
+    private Dictionary<DateTime, List<DailyTask>> _taskCache = new();
+    private bool _isPrefetching = false;
+    private const int CacheDaysRange = 7;
+
     // Computed lists for scheduled/all-day display
     private List<DailyTask> ScheduledTasks => Tasks.Where(t => !t.IsAllDay && t.ScheduledTime.HasValue).ToList();
     private List<DailyTask> AllDayTasks => Tasks.Where(t => t.IsAllDay || !t.ScheduledTime.HasValue).ToList();
@@ -2260,7 +2265,7 @@
         }
     }
 
-    private async Task LoadTasksAsync()
+    private async Task LoadTasksAsync(bool forceRefresh = false)
     {
         if (CurrentUserId == 0) return;
         if (_isLoadingTasks) return; // Prevent concurrent calls
@@ -2277,8 +2282,21 @@
 
             if (IsDailyView)
             {
-                Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
+                // Check cache first for instant switching
+                var dateKey = SelectedDate.Date;
+                if (!forceRefresh && _taskCache.TryGetValue(dateKey, out var cachedTasks))
+                {
+                    Tasks = cachedTasks.ToList(); // Use copy to avoid mutation issues
+                }
+                else
+                {
+                    Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, CurrentUserId);
+                    _taskCache[dateKey] = Tasks.ToList(); // Cache the result
+                }
                 WeeklyTasks.Clear();
+
+                // Prefetch nearby dates in background
+                _ = PrefetchNearbyDatesAsync();
             }
             else
             {
@@ -2299,6 +2317,60 @@
         finally
         {
             _isLoadingTasks = false;
+        }
+    }
+
+    private async Task PrefetchNearbyDatesAsync()
+    {
+        if (_isPrefetching || CurrentUserId == 0) return;
+        _isPrefetching = true;
+
+        try
+        {
+            var datesToPrefetch = new List<DateTime>();
+            for (int i = -CacheDaysRange; i <= CacheDaysRange; i++)
+            {
+                var date = SelectedDate.Date.AddDays(i);
+                if (!_taskCache.ContainsKey(date))
+                {
+                    datesToPrefetch.Add(date);
+                }
+            }
+
+            // Prefetch in batches to avoid overwhelming the DB
+            foreach (var date in datesToPrefetch)
+            {
+                if (!_taskCache.ContainsKey(date))
+                {
+                    var tasks = await TaskService.GetTasksForDateAsync(date, CurrentUserId);
+                    _taskCache[date] = tasks.ToList();
+                }
+            }
+
+            // Clean old cache entries (keep only ±14 days from selected date)
+            var minDate = SelectedDate.Date.AddDays(-14);
+            var maxDate = SelectedDate.Date.AddDays(14);
+            var keysToRemove = _taskCache.Keys.Where(k => k < minDate || k > maxDate).ToList();
+            foreach (var key in keysToRemove)
+            {
+                _taskCache.Remove(key);
+            }
+        }
+        finally
+        {
+            _isPrefetching = false;
+        }
+    }
+
+    private void InvalidateTaskCache(DateTime? specificDate = null)
+    {
+        if (specificDate.HasValue)
+        {
+            _taskCache.Remove(specificDate.Value.Date);
+        }
+        else
+        {
+            _taskCache.Clear();
         }
     }
 
@@ -2404,67 +2476,80 @@
 
         NewTaskText = "";
         NewTaskTimeText = "";
-        await LoadTasksAsync();
+        InvalidateTaskCache(SelectedDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleStarted(DailyTask task)
     {
         await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task DeleteTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleStartedWeekly(DailyTask task)
     {
         await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleWeeklyTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task DeleteWeeklyTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleStartedOverdue(DailyTask task)
     {
         await TaskService.ToggleStartedAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ToggleOverdueTask(DailyTask task)
     {
         await TaskService.ToggleCompletionAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task DeleteOverdueTask(DailyTask task)
     {
         await TaskService.DeleteTaskAsync(task.Id, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task MoveToToday(DailyTask task)
     {
+        var oldDate = task.TaskDate;
         await TaskService.RescheduleTaskAsync(task.Id, LocalToday, CurrentUserId);
-        await LoadTasksAsync();
+        InvalidateTaskCache(oldDate);
+        InvalidateTaskCache(LocalToday);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private bool IsTaskInPast(DailyTask task)
@@ -2517,7 +2602,8 @@
         {
             EditingTask.Title = EditingTaskText;
             await TaskService.UpdateTaskAsync(EditingTask);
-            await LoadTasksAsync();
+            InvalidateTaskCache(EditingTask.TaskDate);
+            await LoadTasksAsync(forceRefresh: true);
         }
         EditingTaskId = null;
         EditingTask = null;
@@ -3259,14 +3345,16 @@
         }
 
         await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
+        InvalidateTaskCache(EditingTimeTask.TaskDate);
         EditingTimeTask = null;
-        await LoadTasksAsync();
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ClearTaskTime(DailyTask task)
     {
         await TaskService.ScheduleTaskTimeAsync(task.Id, null, CurrentUserId, 30);
-        await LoadTasksAsync();
+        InvalidateTaskCache(task.TaskDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     // Drag and drop methods
@@ -3358,7 +3446,8 @@
             DraggingTaskId = null;
             DragOverSlot = null;
 
-            await LoadTasksAsync();
+            InvalidateTaskCache(SelectedDate);
+            await LoadTasksAsync(forceRefresh: true);
             await LoadCalendarTaskCountsAsync();
         }
     }
@@ -3400,7 +3489,8 @@
             DraggingTaskId = null;
             DragOverHour = null;
 
-            await LoadTasksAsync();
+            InvalidateTaskCache(SelectedDate);
+            await LoadTasksAsync(forceRefresh: true);
             await LoadCalendarTaskCountsAsync();
         }
     }
@@ -3652,6 +3742,7 @@
     {
         if (ReschedulingTask == null) return;
 
+        var oldDate = ReschedulingTask.TaskDate;
         await TaskService.RescheduleTaskAsync(ReschedulingTask.Id, targetDate, CurrentUserId);
 
         if (time.HasValue)
@@ -3664,13 +3755,16 @@
         }
 
         ReschedulingTask = null;
-        await LoadTasksAsync();
+        InvalidateTaskCache(oldDate);
+        InvalidateTaskCache(targetDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task RescheduleToDate(DateTime targetDate)
     {
         if (ReschedulingTask == null) return;
 
+        var oldDate = ReschedulingTask.TaskDate;
         await TaskService.RescheduleTaskAsync(ReschedulingTask.Id, targetDate, CurrentUserId);
 
         var newTime = GetRescheduleTime();
@@ -3684,7 +3778,9 @@
         }
 
         ReschedulingTask = null;
-        await LoadTasksAsync();
+        InvalidateTaskCache(oldDate);
+        InvalidateTaskCache(targetDate);
+        await LoadTasksAsync(forceRefresh: true);
     }
 
     private async Task ConfirmReschedule()
