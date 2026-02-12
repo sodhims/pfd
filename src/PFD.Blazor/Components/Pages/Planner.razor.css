@@ -6979,21 +6979,21 @@
         position: relative;
     }
 
-    /* Center selection window - transparent with borders */
+    /* Center selection window - highlighted border frame */
     .day-roller-wrapper::before {
         content: '';
         position: absolute;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        width: 58px;
-        height: 62px;
-        background: transparent;
-        border: 3px solid var(--button-bg);
-        border-radius: 10px;
+        width: 62px;
+        height: 68px;
+        background: rgba(255,255,255,0.1);
+        border: 4px solid var(--button-bg);
+        border-radius: 12px;
         z-index: 10;
         pointer-events: none;
-        box-shadow: 0 0 0 2000px rgba(0,0,0,0.15);
+        box-shadow: 0 0 0 2000px rgba(0,0,0,0.25), inset 0 0 10px rgba(255,255,255,0.1);
     }
 
     /* Gradient fade on edges */
