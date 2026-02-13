@@ -861,9 +861,6 @@
                      @onmousemove="OnRollerMouseMove"
                      @onmouseup="OnRollerMouseUp"
                      @onmouseleave="OnRollerMouseUp"
-                     @ontouchstart="OnRollerTouchStart"
-                     @ontouchmove="OnRollerTouchMove"
-                     @ontouchend="OnRollerTouchEnd"
                      @onwheel="OnRollerWheel"
                      style="transform: translateY(@(rollerOffset)px);">
                     @for (int offset = -7; offset <= 7; offset++)
@@ -1857,9 +1854,8 @@
     private ElementReference syncedTasksRef;
     private bool isSyncingScroll = false;
 
-    // Day roller for horizontal scroll on mobile
+    // Day roller reference for scrolling to selected date
     private ElementReference dayRollerTrackRef;
-    private System.Timers.Timer? _scrollDebounceTimer;
 
     // Day roller drag state
     private bool isDragging = false;
@@ -2146,6 +2142,9 @@
             }
 
             StateHasChanged();
+
+            // Scroll day roller to selected date (for mobile sync)
+            await ScrollDayRollerToSelectedDate();
         }
         catch (Exception)
         {
@@ -2380,7 +2379,7 @@
         }
     }
 
-    private void SelectDate(DateTime date)
+    private async Task SelectDate(DateTime date)
     {
         SelectedDate = date;
         if (date.Month != CurrentMonth.Month || date.Year != CurrentMonth.Year)
@@ -2388,6 +2387,8 @@
             CurrentMonth = new DateTime(date.Year, date.Month, 1);
             BuildCalendar();
         }
+        // Scroll day roller to selected date for mobile sync
+        await ScrollDayRollerToSelectedDate();
     }
 
     private void PreviousMonth()
@@ -2876,11 +2877,13 @@
     // Select date from day roller click
     private async Task SelectDateFromRoller(DateTime date)
     {
-        // Only select if it wasn't a drag
+        // Only select if it wasn't a drag (desktop vertical drag)
         if (totalDragDistance < 10)
         {
             SelectedDate = date;
             await LoadTasksAsync();
+            // Scroll day roller to center on selected date (for mobile)
+            await ScrollDayRollerToSelectedDate();
         }
     }
 
@@ -2889,18 +2892,21 @@
     {
         SelectedDate = SelectedDate.AddDays(-1);
         await LoadTasksAsync();
+        await ScrollDayRollerToSelectedDate();
     }
 
     private async Task NextDay()
     {
         SelectedDate = SelectedDate.AddDays(1);
         await LoadTasksAsync();
+        await ScrollDayRollerToSelectedDate();
     }
 
     private async Task GoToToday()
     {
         SelectedDate = LocalToday;
         await LoadTasksAsync();
+        await ScrollDayRollerToSelectedDate();
     }
 
     // Day roller drag handlers
@@ -2984,45 +2990,15 @@
         await LoadTasksAsync();
     }
 
-    // Horizontal scroll handler for mobile day roller
-    private async Task OnHorizontalRollerScroll()
-    {
-        // Debounce scroll events - wait for scroll to stop
-        _scrollDebounceTimer?.Stop();
-        _scrollDebounceTimer?.Dispose();
-
-        _scrollDebounceTimer = new System.Timers.Timer(150); // 150ms debounce
-        _scrollDebounceTimer.Elapsed += async (s, e) =>
-        {
-            _scrollDebounceTimer?.Stop();
-            await InvokeAsync(async () =>
-            {
-                await DetectCenteredDateAsync();
-            });
-        };
-        _scrollDebounceTimer.AutoReset = false;
-        _scrollDebounceTimer.Start();
-    }
-
-    private async Task DetectCenteredDateAsync()
+    private async Task ScrollDayRollerToSelectedDate()
     {
         try
         {
-            // Use JS to find which date slot is centered
-            var centeredDateStr = await JSRuntime.InvokeAsync<string>("getCenteredDate", dayRollerTrackRef);
-            if (!string.IsNullOrEmpty(centeredDateStr) && DateTime.TryParse(centeredDateStr, out var centeredDate))
-            {
-                if (centeredDate.Date != SelectedDate.Date)
-                {
-                    SelectedDate = centeredDate;
-                    await LoadTasksAsync();
-                    StateHasChanged();
-                }
-            }
+            await JSRuntime.InvokeVoidAsync("scrollDayRollerToDate", dayRollerTrackRef, SelectedDate.ToString("yyyy-MM-dd"));
         }
         catch
         {
-            // Ignore JS interop errors on non-mobile views
+            // Ignore JS interop errors
         }
     }
 

@@ -6979,24 +6979,7 @@
         position: relative;
     }
 
-    /* Center selection window - highlighted border frame */
-    .day-roller-wrapper::before {
-        content: '';
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: 62px;
-        height: 68px;
-        background: rgba(255,255,255,0.1);
-        border: 4px solid var(--button-bg);
-        border-radius: 12px;
-        z-index: 10;
-        pointer-events: none;
-        box-shadow: 0 0 0 2000px rgba(0,0,0,0.25), inset 0 0 10px rgba(255,255,255,0.1);
-    }
-
-    /* Gradient fade on edges */
+    /* Gradient fade on edges - helps indicate scrollability */
     .day-roller-wrapper::after {
         content: '';
         position: absolute;
@@ -7006,8 +6989,8 @@
         bottom: 0;
         background: linear-gradient(90deg,
             var(--calendar-bg) 0%,
-            transparent 15%,
-            transparent 85%,
+            transparent 10%,
+            transparent 90%,
             var(--calendar-bg) 100%);
         pointer-events: none;
         z-index: 5;
@@ -7078,6 +7061,9 @@
     .day-slot.selected {
         background: var(--calendar-selected) !important;
         color: white !important;
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        z-index: 10;
     }
 
     .day-slot.today:not(.selected) {
