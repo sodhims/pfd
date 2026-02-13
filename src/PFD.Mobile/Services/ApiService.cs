@@ -261,6 +261,65 @@ public class ApiService : ITaskService, IAuthService
         return await GetTasksForDateRangeAsync(DateTime.Today, DateTime.Today.AddDays(days), userId);
     }
 
+    public async Task<List<DailyTask>> GetUnscheduledTasksAsync(int userId)
+    {
+        try
+        {
+            var tasks = await _http.GetFromJsonAsync<List<TaskResponse>>(
+                $"{_baseUrl}/api/tasks/{userId}/unscheduled", JsonOptions);
+            return tasks?.Select(MapTask).ToList() ?? new List<DailyTask>();
+        }
+        catch
+        {
+            return new List<DailyTask>();
+        }
+    }
+
+    public async Task<DailyTask> ToggleStartedAsync(int taskId, int userId)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_baseUrl}/api/tasks/{taskId}/toggle-started/{userId}", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TaskResponse>(JsonOptions);
+                if (result != null) return MapTask(result);
+            }
+        }
+        catch { }
+        return new DailyTask { Id = taskId };
+    }
+
+    public async Task<int> KickForwardInProgressTasksAsync(int userId)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_baseUrl}/api/tasks/{userId}/kick-forward", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                if (int.TryParse(result, out var count))
+                    return count;
+            }
+        }
+        catch { }
+        return 0;
+    }
+
+    public async Task<List<DailyTask>> SearchAllTasksAsync(int userId, int maxResults = 100)
+    {
+        try
+        {
+            var tasks = await _http.GetFromJsonAsync<List<TaskResponse>>(
+                $"{_baseUrl}/api/tasks/{userId}/search?maxResults={maxResults}", JsonOptions);
+            return tasks?.Select(MapTask).ToList() ?? new List<DailyTask>();
+        }
+        catch
+        {
+            return new List<DailyTask>();
+        }
+    }
+
     // ==================== PARTICIPANTS ====================
 
     public async Task<List<Participant>> GetAllParticipantsAsync()
@@ -276,11 +335,11 @@ public class ApiService : ITaskService, IAuthService
         }
     }
 
-    public async Task<List<Participant>> GetRecentParticipantsAsync(int userId)
+    public async Task<List<Participant>> GetRecentParticipantsAsync(int limit = 10)
     {
         try
         {
-            var participants = await _http.GetFromJsonAsync<List<Participant>>($"{_baseUrl}/api/participants/recent/{userId}", JsonOptions);
+            var participants = await _http.GetFromJsonAsync<List<Participant>>($"{_baseUrl}/api/participants/recent?limit={limit}", JsonOptions);
             return participants ?? new List<Participant>();
         }
         catch

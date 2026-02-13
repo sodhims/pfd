@@ -1207,9 +1207,9 @@ public class PlannerTests : PageTest
         Assert.That(box, Is.Not.Null);
 
         // Simulate horizontal scroll (swipe left)
-        var startX = box!.X + box.Width * 0.8;
-        var endX = box.X + box.Width * 0.2;
-        var centerY = box.Y + box.Height / 2;
+        var startX = (float)(box!.X + box.Width * 0.8);
+        var endX = (float)(box.X + box.Width * 0.2);
+        var centerY = (float)(box.Y + box.Height / 2);
 
         Console.WriteLine("Performing horizontal swipe...");
         await Page.Mouse.MoveAsync(startX, centerY);

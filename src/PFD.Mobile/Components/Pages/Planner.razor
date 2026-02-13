@@ -7,21 +7,39 @@
     <!-- Header -->
     <div class="mobile-header">
         <div class="header-left">
-            <span class="date-display">@SelectedDate.ToString("MMM d")</span>
+            <button class="icon-btn" @onclick="ToggleSettings">⚙️</button>
         </div>
         <div class="header-center">
             <h1>@GetHeaderText()</h1>
+            <span class="header-date">@SelectedDate.ToString("MMMM d, yyyy")</span>
         </div>
         <div class="header-right">
-            <button class="icon-btn" @onclick="ToggleSettings">⚙️</button>
+            <button class="today-btn-small" @onclick="GoToToday">Today</button>
         </div>
     </div>
 
-    <!-- Date Navigation -->
-    <div class="date-nav">
-        <button class="nav-btn" @onclick="PreviousDay">&lt;</button>
-        <button class="today-btn" @onclick="GoToToday">Today</button>
-        <button class="nav-btn" @onclick="NextDay">&gt;</button>
+    <!-- Day Roller (Horizontal scrolling date picker) -->
+    <div class="day-roller-wrapper">
+        <div class="day-roller-track" @ref="dayRollerTrackRef"
+             @ontouchstart="OnRollerTouchStart"
+             @ontouchmove="OnRollerTouchMove"
+             @ontouchend="OnRollerTouchEnd">
+            @for (int offset = -14; offset <= 14; offset++)
+            {
+                var dayOffset = offset;
+                var displayDate = DateTime.Today.AddDays(dayOffset);
+                var isToday = displayDate.Date == DateTime.Today;
+                var isSelected = displayDate.Date == SelectedDate.Date;
+                var isWeekend = displayDate.DayOfWeek == DayOfWeek.Saturday || displayDate.DayOfWeek == DayOfWeek.Sunday;
+
+                <div class="day-slot @(isToday ? "today" : "") @(isSelected ? "selected" : "") @(isWeekend ? "weekend" : "")"
+                     data-date="@displayDate.ToString("yyyy-MM-dd")"
+                     @onclick="() => SelectDate(displayDate)">
+                    <span class="day-name">@displayDate.ToString("ddd")</span>
+                    <span class="day-num">@displayDate.Day</span>
+                </div>
+            }
+        </div>
     </div>
 
     <!-- Add Task -->
@@ -31,51 +49,154 @@
         <button class="add-btn" @onclick="AddTask">+</button>
     </div>
 
-    <!-- Overdue Section -->
-    @if (OverdueTasks.Any())
-    {
-        <div class="overdue-section">
-            <div class="section-header overdue-header">
-                <span>⚠️ Overdue (@OverdueTasks.Count)</span>
-            </div>
-            @foreach (var task in OverdueTasks)
+    <!-- Task Section Tabs -->
+    <div class="task-section-tabs">
+        <button class="section-tab @(ActiveTaskSection == TaskSection.Scheduled ? "active" : "")"
+                @onclick="() => SetTaskSection(TaskSection.Scheduled)">
+            <span class="tab-icon">🕐</span>
+            <span class="tab-text">Scheduled</span>
+            @if (ScheduledTasks.Any())
             {
-                <div class="task-item overdue">
-                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
-                    <span class="task-text">@task.Title</span>
-                    <span class="task-date">@task.TaskDate.ToString("M/d")</span>
-                    <button class="move-btn" @onclick="() => MoveToToday(task)">→</button>
-                    <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">🗑</button>
-                </div>
+                <span class="tab-count">@ScheduledTasks.Count</span>
             }
-        </div>
-    }
+        </button>
+        <button class="section-tab @(ActiveTaskSection == TaskSection.Tasks ? "active" : "")"
+                @onclick="() => SetTaskSection(TaskSection.Tasks)">
+            <span class="tab-icon">📋</span>
+            <span class="tab-text">Tasks</span>
+            @if (AllDayTasks.Any())
+            {
+                <span class="tab-count">@AllDayTasks.Count</span>
+            }
+        </button>
+        <button class="section-tab @(ActiveTaskSection == TaskSection.Waiting ? "active" : "")"
+                @onclick="() => SetTaskSection(TaskSection.Waiting)">
+            <span class="tab-icon">⏳</span>
+            <span class="tab-text">Waiting</span>
+            @if (OverdueTasks.Any())
+            {
+                <span class="tab-count">@OverdueTasks.Count</span>
+            }
+        </button>
+    </div>
 
-    <!-- Task List -->
+    <!-- Task List Content -->
     <div class="task-list">
-        @if (Tasks.Any())
+        @if (ActiveTaskSection == TaskSection.Scheduled)
         {
-            @foreach (var task in Tasks)
-            {
-                <div class="task-item @(task.IsCompleted ? "completed" : "")">
-                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
-                    <span class="task-text @(task.IsCompleted ? "strikethrough" : "")">@task.Title</span>
-                    @if (task.ScheduledTime.HasValue)
+            <div class="scheduled-section">
+                @if (ScheduledTasks.Any())
+                {
+                    @foreach (var task in ScheduledTasks)
                     {
-                        <span class="task-time">@FormatTime(task.ScheduledTime)</span>
+                        <div class="task-row scheduled @(task.IsCompleted ? "completed" : "")">
+                            <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                            <span class="task-time">@FormatTime(task.ScheduledTime)</span>
+                            <span class="task-title @(task.IsCompleted ? "strikethrough" : "")">@task.Title</span>
+                            <button class="clear-time-btn" title="Remove time" @onclick="() => ClearTaskTime(task)">✕</button>
+                            <button class="delete-btn" @onclick="() => DeleteTask(task)">🗑</button>
+                        </div>
                     }
-                    <button class="delete-btn" @onclick="() => DeleteTask(task)">🗑</button>
-                </div>
-            }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>No scheduled tasks</p>
+                        <p class="hint">Drag tasks here or tap the clock icon</p>
+                    </div>
+                }
+            </div>
         }
-        else
+
+        @if (ActiveTaskSection == TaskSection.Tasks)
         {
-            <div class="empty-state">
-                <p>No tasks for today</p>
-                <p class="hint">Add one above!</p>
+            <div class="allday-section">
+                @if (AllDayTasks.Any())
+                {
+                    @foreach (var task in AllDayTasks)
+                    {
+                        <div class="task-row @(task.IsCompleted ? "completed" : "")">
+                            <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleTask(task)" />
+                            <span class="task-title @(task.IsCompleted ? "strikethrough" : "")">@task.Title</span>
+                            <button class="schedule-btn" title="Schedule time" @onclick="() => OpenTimeEditor(task)">🕐</button>
+                            <button class="delete-btn" @onclick="() => DeleteTask(task)">🗑</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>No tasks for this day</p>
+                        <p class="hint">Add one above!</p>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (ActiveTaskSection == TaskSection.Waiting)
+        {
+            <div class="waiting-section">
+                @if (OverdueTasks.Any())
+                {
+                    @foreach (var task in OverdueTasks)
+                    {
+                        <div class="task-row waiting">
+                            <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleOverdueTask(task)" />
+                            @if (task.ScheduledTime.HasValue)
+                            {
+                                <span class="task-time waiting-time">@FormatTime(task.ScheduledTime)</span>
+                            }
+                            <span class="task-title">@task.Title</span>
+                            <span class="task-date">@task.TaskDate.ToString("M/d")</span>
+                            <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">➜</button>
+                            <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">🗑</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>No waiting tasks</p>
+                        <p class="hint">You're all caught up!</p>
+                    </div>
+                }
             </div>
         }
     </div>
+
+    <!-- Time Editor Modal -->
+    @if (ShowTimeEditor)
+    {
+        <div class="modal-overlay" @onclick="CloseTimeEditor">
+            <div class="modal-content time-editor-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Schedule Time</h3>
+                    <button class="close-btn" @onclick="CloseTimeEditor">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="time-input-group">
+                        <label>Time</label>
+                        <input type="text" placeholder="HH:mm" @bind="EditingTimeValue" />
+                    </div>
+                    <div class="duration-group">
+                        <label>Duration</label>
+                        <select @bind="EditingDuration">
+                            <option value="15">15 min</option>
+                            <option value="30">30 min</option>
+                            <option value="45">45 min</option>
+                            <option value="60">1 hour</option>
+                            <option value="90">1.5 hours</option>
+                            <option value="120">2 hours</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseTimeEditor">Cancel</button>
+                    <button class="save-btn" @onclick="SaveTimeEditor">Save</button>
+                </div>
+            </div>
+        </div>
+    }
 
     <!-- Settings Panel (Overlay) -->
     @if (ShowSettings)
@@ -117,23 +238,39 @@
 </div>
 
 @code {
+    private ElementReference dayRollerTrackRef;
+
     private DateTime SelectedDate { get; set; } = DateTime.Today;
     private string CurrentTheme { get; set; } = "teal";
     private string NewTaskText { get; set; } = "";
     private List<DailyTask> Tasks { get; set; } = new();
     private List<DailyTask> OverdueTasks { get; set; } = new();
     private bool ShowSettings { get; set; } = false;
+    private bool ShowTimeEditor { get; set; } = false;
+    private DailyTask? EditingTimeTask { get; set; }
+    private string EditingTimeValue { get; set; } = "09:00";
+    private int EditingDuration { get; set; } = 30;
+
+    // Touch handling for day roller
+    private double touchStartX;
+    private double touchCurrentX;
+    private bool isTouching;
+
+    private enum TaskSection { Scheduled, Tasks, Waiting }
+    private TaskSection ActiveTaskSection { get; set; } = TaskSection.Tasks;
+
+    // Computed task lists
+    private List<DailyTask> ScheduledTasks => Tasks.Where(t => !t.IsAllDay && t.ScheduledTime.HasValue).OrderBy(t => t.ScheduledTime).ToList();
+    private List<DailyTask> AllDayTasks => Tasks.Where(t => t.IsAllDay || !t.ScheduledTime.HasValue).ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        // Check if logged in
         if (Login.CurrentUserId == 0)
         {
             Navigation.NavigateTo("/login");
             return;
         }
 
-        // Load user settings
         var user = await AuthService.GetUserByIdAsync(Login.CurrentUserId);
         if (user != null)
         {
@@ -148,15 +285,9 @@
         if (Login.CurrentUserId == 0) return;
 
         Tasks = await TaskService.GetTasksForDateAsync(SelectedDate, Login.CurrentUserId);
+        OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, Login.CurrentUserId);
 
-        if (SelectedDate.Date == DateTime.Today)
-        {
-            OverdueTasks = await TaskService.GetOverdueTasksAsync(DateTime.Today, Login.CurrentUserId);
-        }
-        else
-        {
-            OverdueTasks.Clear();
-        }
+        StateHasChanged();
     }
 
     private string GetHeaderText()
@@ -170,22 +301,62 @@
         return SelectedDate.ToString("dddd");
     }
 
-    private void PreviousDay()
+    private void SetTaskSection(TaskSection section)
     {
-        SelectedDate = SelectedDate.AddDays(-1);
-        _ = LoadTasksAsync();
+        ActiveTaskSection = section;
     }
 
-    private void NextDay()
+    private async Task SelectDate(DateTime date)
     {
-        SelectedDate = SelectedDate.AddDays(1);
-        _ = LoadTasksAsync();
+        SelectedDate = date;
+        await LoadTasksAsync();
     }
 
-    private void GoToToday()
+    private async Task GoToToday()
     {
         SelectedDate = DateTime.Today;
-        _ = LoadTasksAsync();
+        await LoadTasksAsync();
+    }
+
+    // Touch handlers for horizontal day roller
+    private void OnRollerTouchStart(TouchEventArgs e)
+    {
+        if (e.Touches.Length > 0)
+        {
+            touchStartX = e.Touches[0].ClientX;
+            touchCurrentX = touchStartX;
+            isTouching = true;
+        }
+    }
+
+    private void OnRollerTouchMove(TouchEventArgs e)
+    {
+        if (!isTouching || e.Touches.Length == 0) return;
+        touchCurrentX = e.Touches[0].ClientX;
+    }
+
+    private async Task OnRollerTouchEnd(TouchEventArgs e)
+    {
+        if (!isTouching) return;
+        isTouching = false;
+
+        var deltaX = touchCurrentX - touchStartX;
+
+        // If swipe distance is significant, change date
+        if (Math.Abs(deltaX) > 50)
+        {
+            if (deltaX > 0)
+            {
+                // Swiped right - go to previous day
+                SelectedDate = SelectedDate.AddDays(-1);
+            }
+            else
+            {
+                // Swiped left - go to next day
+                SelectedDate = SelectedDate.AddDays(1);
+            }
+            await LoadTasksAsync();
+        }
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -242,7 +413,51 @@
     private async Task MoveToToday(DailyTask task)
     {
         await TaskService.RescheduleTaskAsync(task.Id, DateTime.Today, Login.CurrentUserId);
+
+        // Navigate to today and switch to Tasks tab
+        SelectedDate = DateTime.Today;
+        ActiveTaskSection = TaskSection.Tasks;
+
         await LoadTasksAsync();
+    }
+
+    private async Task ClearTaskTime(DailyTask task)
+    {
+        await TaskService.ScheduleTaskTimeAsync(task.Id, null, Login.CurrentUserId, 30);
+        await LoadTasksAsync();
+    }
+
+    private void OpenTimeEditor(DailyTask task)
+    {
+        EditingTimeTask = task;
+        EditingTimeValue = task.ScheduledTime.HasValue
+            ? $"{task.ScheduledTime.Value.Hours:D2}:{task.ScheduledTime.Value.Minutes:D2}"
+            : "09:00";
+        EditingDuration = task.DurationMinutes > 0 ? task.DurationMinutes : 30;
+        ShowTimeEditor = true;
+    }
+
+    private void CloseTimeEditor()
+    {
+        ShowTimeEditor = false;
+        EditingTimeTask = null;
+    }
+
+    private async Task SaveTimeEditor()
+    {
+        if (EditingTimeTask == null) return;
+
+        if (TimeSpan.TryParse(EditingTimeValue, out var time))
+        {
+            await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, Login.CurrentUserId, EditingDuration);
+
+            // Switch to Scheduled tab to show the newly scheduled task
+            ActiveTaskSection = TaskSection.Scheduled;
+
+            await LoadTasksAsync();
+        }
+
+        CloseTimeEditor();
     }
 
     private void ToggleSettings()

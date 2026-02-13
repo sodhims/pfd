@@ -2555,6 +2555,11 @@
         await TaskService.RescheduleTaskAsync(task.Id, LocalToday, CurrentUserId);
         InvalidateTaskCache(oldDate);
         InvalidateTaskCache(LocalToday);
+
+        // Navigate to today and switch to Tasks tab so the user can see the moved task
+        SelectedDate = LocalToday;
+        ActiveTaskSection = TaskSection.Tasks;
+
         await LoadTasksAsync(forceRefresh: true);
     }
 
