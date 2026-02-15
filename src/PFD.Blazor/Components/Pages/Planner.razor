@@ -289,6 +289,7 @@
             <div class="template-dropdown">
                 <button class="template-btn" @onclick="ToggleTemplateDropdown" title="Use template">&#128203;</button>
                 <button class="search-btn" @onclick="ToggleSearchPanel" title="AI Search">&#128269;</button>
+                <button class="voice-btn" @onclick="OpenVoiceModal" title="Record voice task">&#127908;</button>
                 @if (ShowTemplateDropdown)
                 {
                     <div class="template-menu">
@@ -1798,6 +1799,79 @@
             </div>
         </div>
     }
+
+    @* Voice Recording Modal *@
+    @if (ShowVoiceModal)
+    {
+        <div class="modal-overlay" @onclick="CloseVoiceModal">
+            <div class="voice-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>&#127908; Voice Task</span>
+                    <button class="close-btn" @onclick="CloseVoiceModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    @switch (VoiceState)
+                    {
+                        case VoiceRecordingState.Idle:
+                            <div class="voice-instructions">
+                                <p>Press the button and speak to create a task.</p>
+                                <p class="voice-hint">Example: "Meet with John tomorrow at 2pm to discuss the budget"</p>
+                            </div>
+                            <button class="start-recording-btn" @onclick="StartVoiceRecording">
+                                &#127908; Start Recording
+                            </button>
+                            break;
+
+                        case VoiceRecordingState.Recording:
+                            <div class="recording-indicator">
+                                <span class="recording-dot"></span>
+                                <span class="recording-timer">@FormatRecordingTime(RecordingSeconds)</span>
+                            </div>
+                            <p class="recording-hint">Speak now...</p>
+                            <button class="stop-recording-btn" @onclick="StopVoiceRecording">
+                                &#9632; Stop Recording
+                            </button>
+                            break;
+
+                        case VoiceRecordingState.Transcribing:
+                            <div class="transcribing-indicator">
+                                <div class="spinner"></div>
+                                <span>Transcribing...</span>
+                            </div>
+                            break;
+
+                        case VoiceRecordingState.Preview:
+                            <div class="transcription-preview">
+                                <label>Transcription:</label>
+                                <textarea @bind="VoiceTranscriptionText" rows="3" placeholder="Edit transcription if needed..."></textarea>
+                            </div>
+                            break;
+
+                        case VoiceRecordingState.Creating:
+                            <div class="transcribing-indicator">
+                                <div class="spinner"></div>
+                                <span>Creating task...</span>
+                            </div>
+                            break;
+
+                        case VoiceRecordingState.Error:
+                            <div class="voice-error">
+                                <span>&#9888; @VoiceErrorMessage</span>
+                            </div>
+                            <button class="retry-btn" @onclick="ResetVoiceRecording">Try Again</button>
+                            break;
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseVoiceModal">Cancel</button>
+                    @if (VoiceState == VoiceRecordingState.Preview && !string.IsNullOrWhiteSpace(VoiceTranscriptionText))
+                    {
+                        <button class="save-btn" @onclick="CreateTaskFromVoice">Create Task</button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -1926,6 +2000,15 @@
     // Share task modal
     private DailyTask? ShareTask { get; set; }
     private int SelectedShareGroupId { get; set; } = 0;
+
+    // Voice recording
+    private enum VoiceRecordingState { Idle, Recording, Transcribing, Preview, Creating, Error }
+    private bool ShowVoiceModal { get; set; } = false;
+    private VoiceRecordingState VoiceState { get; set; } = VoiceRecordingState.Idle;
+    private string VoiceTranscriptionText { get; set; } = "";
+    private string VoiceErrorMessage { get; set; } = "";
+    private int RecordingSeconds { get; set; } = 0;
+    private DotNetObjectReference<Planner>? _voiceDotNetRef;
 
     // Appointment Detail Panel (double-click on scheduled task)
     private DailyTask? AppointmentDetailTask { get; set; }
@@ -5190,5 +5273,189 @@ Best regards";
             guestEmails;
 
         await JSRuntime.InvokeVoidAsync("open", calendarUrl);
+    }
+
+    // ==================== VOICE RECORDING ====================
+
+    private async Task OpenVoiceModal()
+    {
+        try
+        {
+            // Check browser support
+            var isSupported = await JSRuntime.InvokeAsync<bool>("voiceRecorder.isSupported");
+            if (!isSupported)
+            {
+                VoiceErrorMessage = "Your browser doesn't support voice recording.";
+                VoiceState = VoiceRecordingState.Error;
+                ShowVoiceModal = true;
+                return;
+            }
+
+            ResetVoiceRecording();
+            ShowVoiceModal = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening voice modal: {ex.Message}");
+        }
+    }
+
+    private void CloseVoiceModal()
+    {
+        if (VoiceState == VoiceRecordingState.Recording)
+        {
+            _ = JSRuntime.InvokeVoidAsync("voiceRecorder.cancelRecording");
+        }
+        ShowVoiceModal = false;
+        _voiceDotNetRef?.Dispose();
+        _voiceDotNetRef = null;
+    }
+
+    private void ResetVoiceRecording()
+    {
+        VoiceState = VoiceRecordingState.Idle;
+        VoiceTranscriptionText = "";
+        VoiceErrorMessage = "";
+        RecordingSeconds = 0;
+    }
+
+    private async Task StartVoiceRecording()
+    {
+        try
+        {
+            _voiceDotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("voiceRecorder.startRecording", _voiceDotNetRef);
+            VoiceState = VoiceRecordingState.Recording;
+            RecordingSeconds = 0;
+        }
+        catch (Exception ex)
+        {
+            VoiceErrorMessage = ex.Message;
+            VoiceState = VoiceRecordingState.Error;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnTimerUpdate(int seconds)
+    {
+        RecordingSeconds = seconds;
+
+        // Auto-stop after 60 seconds
+        if (seconds >= 60)
+        {
+            await StopVoiceRecording();
+        }
+        else
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnRecordingError(string errorMessage)
+    {
+        VoiceErrorMessage = errorMessage;
+        VoiceState = VoiceRecordingState.Error;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopVoiceRecording()
+    {
+        try
+        {
+            VoiceState = VoiceRecordingState.Transcribing;
+            StateHasChanged();
+
+            // Get audio from JS
+            var result = await JSRuntime.InvokeAsync<VoiceRecordingResult>("voiceRecorder.stopRecording");
+
+            // Send to backend for transcription
+            using var httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+
+            var response = await httpClient.PostAsJsonAsync("/api/voice-transcribe", new
+            {
+                AudioBase64 = result.AudioBase64,
+                MimeType = result.MimeType,
+                Locale = "en-US"
+            });
+
+            var transcribeResponse = await response.Content.ReadFromJsonAsync<TranscribeAudioResponse>();
+
+            if (transcribeResponse?.Success == true && !string.IsNullOrWhiteSpace(transcribeResponse.Text))
+            {
+                VoiceTranscriptionText = transcribeResponse.Text;
+                VoiceState = VoiceRecordingState.Preview;
+            }
+            else
+            {
+                VoiceErrorMessage = transcribeResponse?.ErrorMessage ?? "Transcription failed. Please try again.";
+                VoiceState = VoiceRecordingState.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceErrorMessage = $"Error: {ex.Message}";
+            VoiceState = VoiceRecordingState.Error;
+        }
+    }
+
+    private async Task CreateTaskFromVoice()
+    {
+        if (string.IsNullOrWhiteSpace(VoiceTranscriptionText) || CurrentUserId == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            VoiceState = VoiceRecordingState.Creating;
+            StateHasChanged();
+
+            // Call voice-task endpoint
+            using var httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+
+            var response = await httpClient.PostAsJsonAsync("/api/voice-task", new VoiceTaskRequest
+            {
+                UserId = CurrentUserId,
+                TranscribedText = VoiceTranscriptionText,
+                RecordedAt = DateTime.UtcNow
+            });
+
+            var taskResponse = await response.Content.ReadFromJsonAsync<VoiceTaskResponse>();
+
+            if (taskResponse?.Success == true)
+            {
+                // Refresh tasks to show new task
+                await LoadTasksAsync();
+                CloseVoiceModal();
+            }
+            else
+            {
+                VoiceErrorMessage = taskResponse?.ErrorMessage ?? "Failed to create task.";
+                VoiceState = VoiceRecordingState.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceErrorMessage = $"Error creating task: {ex.Message}";
+            VoiceState = VoiceRecordingState.Error;
+        }
+    }
+
+    private static string FormatRecordingTime(int seconds)
+    {
+        var minutes = seconds / 60;
+        var secs = seconds % 60;
+        return $"{minutes}:{secs:D2}";
+    }
+
+    // Helper class for JS interop result
+    private class VoiceRecordingResult
+    {
+        public string AudioBase64 { get; set; } = "";
+        public string MimeType { get; set; } = "";
+        public double DurationSeconds { get; set; }
     }
 }

@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using PFD.Shared.Interfaces;
 using PFD.Shared.Models;
+using PFD.Shared.Enums;
+using PFD.Services;
+using PFD.Blazor.Services;
 
 namespace PFD.Blazor.Controllers;
 
@@ -11,12 +14,21 @@ public class ApiController : ControllerBase
     private readonly ITaskService _taskService;
     private readonly IAuthService _authService;
     private readonly IGroupService _groupService;
+    private readonly IClaudeService _claudeService;
+    private readonly IAzureSpeechService? _speechService;
 
-    public ApiController(ITaskService taskService, IAuthService authService, IGroupService groupService)
+    public ApiController(
+        ITaskService taskService,
+        IAuthService authService,
+        IGroupService groupService,
+        IClaudeService claudeService,
+        IAzureSpeechService? speechService = null)
     {
         _taskService = taskService;
         _authService = authService;
         _groupService = groupService;
+        _claudeService = claudeService;
+        _speechService = speechService;
     }
 
     // ==================== AUTH ====================
@@ -263,6 +275,184 @@ public class ApiController : ControllerBase
     {
         await _groupService.UnshareTaskAsync(taskId, request.UserId);
         return Ok();
+    }
+
+    // ==================== VOICE-TO-TASK (VoicePal Integration) ====================
+
+    /// <summary>
+    /// Creates a task from a voice transcription (VoicePal integration).
+    /// Uses AI to extract task title, due date, category, and participants.
+    /// </summary>
+    [HttpPost("voice-task")]
+    public async Task<IActionResult> CreateVoiceTask([FromBody] VoiceTaskRequest request)
+    {
+        // Validate request
+        if (string.IsNullOrWhiteSpace(request.TranscribedText))
+            return BadRequest(VoiceTaskResponse.Failed("Transcribed text is required", "EMPTY_TEXT"));
+
+        // Verify user exists
+        var user = await _authService.GetUserByIdAsync(request.UserId);
+        if (user == null)
+            return NotFound(VoiceTaskResponse.Failed("User not found", "USER_NOT_FOUND"));
+
+        // Get recent participants for AI context
+        var recentParticipants = await _taskService.GetRecentParticipantsAsync(10);
+
+        // Use Claude AI to augment the task (extract title, due date, category, participants)
+        TaskMetadata? metadata = null;
+        string title = request.TranscribedText;
+        DateTime taskDate = DateTime.Today;
+        TimeSpan? scheduledTime = null;
+        TaskType taskType = TaskType.General;
+
+        try
+        {
+            if (await _claudeService.IsAvailableAsync())
+            {
+                metadata = await _claudeService.AugmentTaskAsync(request.TranscribedText, recentParticipants);
+
+                if (metadata != null)
+                {
+                    // Use AI-suggested due date as task date if available
+                    if (metadata.SuggestedDueDate.HasValue)
+                    {
+                        taskDate = metadata.SuggestedDueDate.Value.Date;
+                        // Extract time if present
+                        var time = metadata.SuggestedDueDate.Value.TimeOfDay;
+                        if (time != TimeSpan.Zero)
+                        {
+                            scheduledTime = time;
+                        }
+                    }
+
+                    // Map category to TaskType
+                    if (!string.IsNullOrEmpty(metadata.Category))
+                    {
+                        taskType = metadata.Category.ToLowerInvariant() switch
+                        {
+                            "meeting" => TaskType.Meeting,
+                            "academic" => TaskType.Academic,
+                            "personal" => TaskType.Personal,
+                            "work" => TaskType.Work,
+                            _ => TaskType.General
+                        };
+                    }
+
+                    // Create a shorter title from the transcription (first sentence or truncate)
+                    title = CreateTaskTitle(request.TranscribedText);
+                }
+            }
+        }
+        catch
+        {
+            // If AI fails, continue with basic task creation
+        }
+
+        // Create the task
+        var task = new DailyTask
+        {
+            Title = title,
+            Description = $"[Voice transcription]\n{request.TranscribedText}",
+            TaskDate = taskDate,
+            ScheduledTime = scheduledTime,
+            IsAllDay = scheduledTime == null,
+            DurationMinutes = 30,
+            TaskType = taskType,
+            UserId = request.UserId,
+            DueBy = metadata?.SuggestedDueDate,
+            MetadataJson = metadata != null ? System.Text.Json.JsonSerializer.Serialize(metadata) : null
+        };
+
+        var created = await _taskService.CreateTaskAsync(task);
+
+        // Return response
+        return Ok(new VoiceTaskResponse
+        {
+            TaskId = created.Id,
+            Title = created.Title,
+            Description = created.Description,
+            TaskDate = created.TaskDate,
+            ScheduledTime = created.ScheduledTime,
+            DurationMinutes = created.DurationMinutes,
+            DueBy = created.DueBy,
+            Category = metadata?.Category ?? "General",
+            SuggestedParticipants = metadata?.SuggestedParticipants,
+            AiConfidence = metadata?.ConfidenceScore ?? 0,
+            AiNotes = metadata?.AiNotes,
+            Success = true
+        });
+    }
+
+    /// <summary>
+    /// Creates a task title from transcribed text (first sentence or truncated).
+    /// </summary>
+    private static string CreateTaskTitle(string transcribedText)
+    {
+        if (string.IsNullOrWhiteSpace(transcribedText))
+            return "Voice task";
+
+        // Find first sentence
+        var sentenceEnders = new[] { '.', '!', '?' };
+        var firstSentenceEnd = transcribedText.IndexOfAny(sentenceEnders);
+
+        string title;
+        if (firstSentenceEnd > 0 && firstSentenceEnd < 100)
+        {
+            title = transcribedText[..(firstSentenceEnd + 1)].Trim();
+        }
+        else if (transcribedText.Length <= 100)
+        {
+            title = transcribedText.Trim();
+        }
+        else
+        {
+            // Truncate at word boundary
+            var truncated = transcribedText[..100];
+            var lastSpace = truncated.LastIndexOf(' ');
+            title = lastSpace > 50 ? truncated[..lastSpace] + "..." : truncated + "...";
+        }
+
+        return title;
+    }
+
+    // ==================== VOICE TRANSCRIPTION ====================
+
+    /// <summary>
+    /// Transcribes audio data to text using Azure Speech Services.
+    /// </summary>
+    [HttpPost("voice-transcribe")]
+    public async Task<IActionResult> TranscribeAudio([FromBody] TranscribeAudioRequest request)
+    {
+        if (_speechService == null || !_speechService.IsConfigured)
+        {
+            return Ok(TranscribeAudioResponse.Failed(
+                "Voice transcription not configured. Please set Azure Speech credentials.",
+                "NOT_CONFIGURED"));
+        }
+
+        if (string.IsNullOrEmpty(request.AudioBase64))
+        {
+            return BadRequest(TranscribeAudioResponse.Failed("No audio data provided", "EMPTY_AUDIO"));
+        }
+
+        try
+        {
+            var audioBytes = Convert.FromBase64String(request.AudioBase64);
+            var result = await _speechService.TranscribeAsync(
+                audioBytes,
+                request.MimeType,
+                request.Locale);
+
+            return Ok(result);
+        }
+        catch (FormatException)
+        {
+            return BadRequest(TranscribeAudioResponse.Failed("Invalid base64 audio data", "INVALID_BASE64"));
+        }
+        catch (Exception ex)
+        {
+            return Ok(TranscribeAudioResponse.Failed($"Transcription failed: {ex.Message}", "TRANSCRIPTION_ERROR"));
+        }
     }
 
     // ==================== HELPERS ====================

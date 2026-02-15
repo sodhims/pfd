@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PFD.Blazor.Components;
+using PFD.Blazor.Services;
 using PFD.Data;
 using PFD.Data.Repositories;
 using PFD.Services;
@@ -69,6 +70,20 @@ if (!string.IsNullOrEmpty(claudeApiKey))
     Console.WriteLine("Claude AI Service configured");
 else
     Console.WriteLine("Claude AI not configured (set Claude:ApiKey or CLAUDE_API_KEY)");
+
+// Azure Speech Service - for voice transcription
+var azureSpeechKey = builder.Configuration["AzureSpeech:Key"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY") ?? "";
+var azureSpeechRegion = builder.Configuration["AzureSpeech:Region"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus";
+if (!string.IsNullOrEmpty(azureSpeechKey))
+{
+    builder.Services.AddSingleton<IAzureSpeechService>(sp =>
+        new AzureSpeechService(azureSpeechKey, azureSpeechRegion, sp.GetRequiredService<ILogger<AzureSpeechService>>()));
+    Console.WriteLine("Azure Speech Service configured");
+}
+else
+{
+    Console.WriteLine("Azure Speech not configured (set AzureSpeech:Key or AZURE_SPEECH_KEY)");
+}
 
 // External Calendar Services - configure with your credentials
 var googleClientId = builder.Configuration["Google:ClientId"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
