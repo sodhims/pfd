@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using PFD.Shared.Interfaces;
 using PFD.Shared.Models;
 using PFD.Shared.Enums;
 using PFD.Services;
 using PFD.Blazor.Services;
+using PFD.Data;
 
 namespace PFD.Blazor.Controllers;
 
@@ -17,12 +19,14 @@ public class ApiController : ControllerBase
     private readonly IClaudeService _claudeService;
     private readonly IAzureSpeechService? _speechService;
     private readonly IVoiceClipService? _voiceClipService;
+    private readonly IDbContextFactory<PfdDbContext> _dbFactory;
 
     public ApiController(
         ITaskService taskService,
         IAuthService authService,
         IGroupService groupService,
         IClaudeService claudeService,
+        IDbContextFactory<PfdDbContext> dbFactory,
         IAzureSpeechService? speechService = null,
         IVoiceClipService? voiceClipService = null)
     {
@@ -30,6 +34,7 @@ public class ApiController : ControllerBase
         _authService = authService;
         _groupService = groupService;
         _claudeService = claudeService;
+        _dbFactory = dbFactory;
         _speechService = speechService;
         _voiceClipService = voiceClipService;
     }
@@ -481,6 +486,35 @@ public class ApiController : ControllerBase
     // ==================== VOICE CLIPS ====================
 
     /// <summary>
+    /// Initialize voice clips table (call if table doesn't exist).
+    /// </summary>
+    [HttpPost("voice-clips-init")]
+    public async Task<IActionResult> InitVoiceClipsTable()
+    {
+        try
+        {
+            using var db = await _dbFactory.CreateDbContextAsync();
+
+            // Try to query the table first
+            try
+            {
+                var count = await db.VoiceClips.CountAsync();
+                return Ok(new { success = true, message = $"Voice clips table exists with {count} clips." });
+            }
+            catch
+            {
+                // Table doesn't exist, trigger schema creation
+                db.Database.EnsureCreated();
+                return Ok(new { success = true, message = "Voice clips table created." });
+            }
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Save a recorded voice clip for later transcription.
     /// </summary>
     [HttpPost("voice-clip")]
@@ -520,7 +554,12 @@ public class ApiController : ControllerBase
         }
         catch (Exception ex)
         {
-            return Ok(new { success = false, error = ex.Message });
+            // Get the innermost exception for better error details
+            var innerEx = ex;
+            while (innerEx.InnerException != null)
+                innerEx = innerEx.InnerException;
+
+            return Ok(new { success = false, error = ex.Message, innerError = innerEx.Message });
         }
     }
 
