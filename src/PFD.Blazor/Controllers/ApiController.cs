@@ -488,7 +488,7 @@ public class ApiController : ControllerBase
     /// <summary>
     /// Initialize voice clips table (call if table doesn't exist).
     /// </summary>
-    [HttpPost("voice-clips-init")]
+    [HttpGet("voice-clips-init")]
     public async Task<IActionResult> InitVoiceClipsTable()
     {
         try
