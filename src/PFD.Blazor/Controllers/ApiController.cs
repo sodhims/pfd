@@ -426,6 +426,25 @@ public class ApiController : ControllerBase
     // ==================== VOICE TRANSCRIPTION ====================
 
     /// <summary>
+    /// Debug endpoint to check environment variables.
+    /// </summary>
+    [HttpGet("voice-debug")]
+    public IActionResult VoiceDebug()
+    {
+        var envKey = Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
+        var envRegion = Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION");
+
+        return Ok(new
+        {
+            speechServiceRegistered = _speechService != null,
+            speechServiceConfigured = _speechService?.IsConfigured ?? false,
+            envKeySet = !string.IsNullOrEmpty(envKey),
+            envKeyLength = envKey?.Length ?? 0,
+            envRegion = envRegion ?? "(not set)"
+        });
+    }
+
+    /// <summary>
     /// Tests Azure Speech Service connection.
     /// </summary>
     [HttpGet("voice-test")]
