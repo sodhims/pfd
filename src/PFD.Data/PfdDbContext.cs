@@ -17,6 +17,7 @@ public class PfdDbContext : DbContext
     public DbSet<PromptTemplate> PromptTemplates { get; set; } = null!;
     public DbSet<TaskTemplate> TaskTemplates { get; set; } = null!;
     public DbSet<SubtaskTemplate> SubtaskTemplates { get; set; } = null!;
+    public DbSet<VoiceClip> VoiceClips { get; set; } = null!;
 
     private bool IsSqlServer => Database.ProviderName?.Contains("SqlServer") == true;
 
@@ -339,6 +340,41 @@ public class PfdDbContext : DbContext
             {
                 Console.WriteLine($"Warning: Could not create subtask_templates table: {ex.Message}");
             }
+
+            // Create voice_clips table if it doesn't exist
+            try
+            {
+                using var createVoiceClipsCmd = connection.CreateCommand();
+                createVoiceClipsCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'voice_clips')
+                    BEGIN
+                        CREATE TABLE voice_clips (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            UserId INT NOT NULL,
+                            CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                            AudioData VARBINARY(MAX) NOT NULL,
+                            MimeType NVARCHAR(50) NOT NULL DEFAULT 'audio/webm',
+                            DurationSeconds FLOAT NOT NULL DEFAULT 0,
+                            TranscribedText NVARCHAR(MAX) NULL,
+                            EditedText NVARCHAR(MAX) NULL,
+                            Confidence FLOAT NULL,
+                            Locale NVARCHAR(20) NULL DEFAULT 'en-US',
+                            TranscribedAt DATETIME2 NULL,
+                            TaskId INT NULL,
+                            ConvertedToTaskAt DATETIME2 NULL,
+                            Status INT NOT NULL DEFAULT 0,
+                            CONSTRAINT FK_voice_clips_users FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE,
+                            CONSTRAINT FK_voice_clips_tasks FOREIGN KEY (TaskId) REFERENCES daily_tasks(Id) ON DELETE SET NULL
+                        );
+                        CREATE INDEX IX_voice_clips_user ON voice_clips(UserId);
+                        CREATE INDEX IX_voice_clips_status ON voice_clips(Status);
+                    END";
+                createVoiceClipsCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create voice_clips table: {ex.Message}");
+            }
         }
         finally
         {
@@ -654,6 +690,46 @@ public class PfdDbContext : DbContext
                 createSubtaskTemplatesIndexCmd.CommandText = "CREATE INDEX IX_subtask_templates_task ON subtask_templates(TaskTemplateId)";
                 createSubtaskTemplatesIndexCmd.ExecuteNonQuery();
             }
+
+            // Create voice_clips table if it doesn't exist
+            try
+            {
+                using var checkVoiceClipsCmd = connection.CreateCommand();
+                checkVoiceClipsCmd.CommandText = "SELECT Id FROM voice_clips LIMIT 1";
+                checkVoiceClipsCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createVoiceClipsCmd = connection.CreateCommand();
+                createVoiceClipsCmd.CommandText = @"
+                    CREATE TABLE voice_clips (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        CreatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+                        AudioData BLOB NOT NULL,
+                        MimeType TEXT NOT NULL DEFAULT 'audio/webm',
+                        DurationSeconds REAL NOT NULL DEFAULT 0,
+                        TranscribedText TEXT NULL,
+                        EditedText TEXT NULL,
+                        Confidence REAL NULL,
+                        Locale TEXT NULL DEFAULT 'en-US',
+                        TranscribedAt TEXT NULL,
+                        TaskId INTEGER NULL,
+                        ConvertedToTaskAt TEXT NULL,
+                        Status INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY (UserId) REFERENCES users(Id) ON DELETE CASCADE,
+                        FOREIGN KEY (TaskId) REFERENCES daily_tasks(Id) ON DELETE SET NULL
+                    )";
+                createVoiceClipsCmd.ExecuteNonQuery();
+
+                using var createVoiceClipsIndexCmd = connection.CreateCommand();
+                createVoiceClipsIndexCmd.CommandText = "CREATE INDEX IX_voice_clips_user ON voice_clips(UserId)";
+                createVoiceClipsIndexCmd.ExecuteNonQuery();
+
+                using var createVoiceClipsStatusIndexCmd = connection.CreateCommand();
+                createVoiceClipsStatusIndexCmd.CommandText = "CREATE INDEX IX_voice_clips_status ON voice_clips(Status)";
+                createVoiceClipsStatusIndexCmd.ExecuteNonQuery();
+            }
         }
         finally
         {
@@ -860,6 +936,17 @@ public class PfdDbContext : DbContext
         modelBuilder.Entity<SubtaskTemplate>(entity =>
         {
             entity.HasIndex(e => e.TaskTemplateId);
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+        });
+
+        // VoiceClip configuration
+        modelBuilder.Entity<VoiceClip>(entity =>
+        {
+            entity.ToTable("voice_clips");
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.Status);
 
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql(defaultDateSql);

@@ -16,19 +16,22 @@ public class ApiController : ControllerBase
     private readonly IGroupService _groupService;
     private readonly IClaudeService _claudeService;
     private readonly IAzureSpeechService? _speechService;
+    private readonly IVoiceClipService? _voiceClipService;
 
     public ApiController(
         ITaskService taskService,
         IAuthService authService,
         IGroupService groupService,
         IClaudeService claudeService,
-        IAzureSpeechService? speechService = null)
+        IAzureSpeechService? speechService = null,
+        IVoiceClipService? voiceClipService = null)
     {
         _taskService = taskService;
         _authService = authService;
         _groupService = groupService;
         _claudeService = claudeService;
         _speechService = speechService;
+        _voiceClipService = voiceClipService;
     }
 
     // ==================== AUTH ====================
@@ -473,6 +476,169 @@ public class ApiController : ControllerBase
         {
             return Ok(TranscribeAudioResponse.Failed($"Transcription failed: {ex.Message}", "TRANSCRIPTION_ERROR"));
         }
+    }
+
+    // ==================== VOICE CLIPS ====================
+
+    /// <summary>
+    /// Save a recorded voice clip for later transcription.
+    /// </summary>
+    [HttpPost("voice-clip")]
+    public async Task<IActionResult> SaveVoiceClip([FromBody] SaveVoiceClipRequest request)
+    {
+        if (_voiceClipService == null)
+        {
+            return Ok(new { success = false, error = "Voice clip service not available" });
+        }
+
+        if (string.IsNullOrEmpty(request.AudioBase64))
+        {
+            return BadRequest(new { success = false, error = "No audio data provided" });
+        }
+
+        try
+        {
+            var audioBytes = Convert.FromBase64String(request.AudioBase64);
+            var clip = await _voiceClipService.SaveClipAsync(
+                request.UserId,
+                audioBytes,
+                request.MimeType ?? "audio/webm",
+                request.DurationSeconds);
+
+            return Ok(new
+            {
+                success = true,
+                clip = new
+                {
+                    clip.Id,
+                    clip.CreatedAt,
+                    clip.DurationSeconds,
+                    clip.MimeType,
+                    status = clip.Status.ToString()
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get user's voice clips.
+    /// </summary>
+    [HttpGet("voice-clips/{userId}")]
+    public async Task<IActionResult> GetVoiceClips(int userId, [FromQuery] int limit = 20)
+    {
+        if (_voiceClipService == null)
+        {
+            return Ok(new { success = false, clips = Array.Empty<object>() });
+        }
+
+        var clips = await _voiceClipService.GetUserClipsAsync(userId, limit);
+        return Ok(new
+        {
+            success = true,
+            clips = clips.Select(c => new
+            {
+                c.Id,
+                c.CreatedAt,
+                c.DurationSeconds,
+                c.MimeType,
+                c.TranscribedText,
+                c.EditedText,
+                effectiveText = c.EffectiveText,
+                c.Confidence,
+                c.TranscribedAt,
+                status = c.Status.ToString()
+            })
+        });
+    }
+
+    /// <summary>
+    /// Get audio data for a clip (for playback).
+    /// </summary>
+    [HttpGet("voice-clip/{clipId}/audio")]
+    public async Task<IActionResult> GetVoiceClipAudio(int clipId)
+    {
+        if (_voiceClipService == null)
+        {
+            return NotFound();
+        }
+
+        var clip = await _voiceClipService.GetClipAsync(clipId);
+        if (clip == null)
+        {
+            return NotFound();
+        }
+
+        return File(clip.AudioData, clip.MimeType);
+    }
+
+    /// <summary>
+    /// Transcribe a saved voice clip.
+    /// </summary>
+    [HttpPost("voice-clip/{clipId}/transcribe")]
+    public async Task<IActionResult> TranscribeVoiceClip(int clipId)
+    {
+        if (_voiceClipService == null)
+        {
+            return Ok(new { success = false, error = "Voice clip service not available" });
+        }
+
+        var clip = await _voiceClipService.TranscribeClipAsync(clipId);
+        if (clip == null)
+        {
+            return Ok(new { success = false, error = "Clip not found or transcription failed" });
+        }
+
+        return Ok(new
+        {
+            success = clip.Status == VoiceClipStatus.Transcribed,
+            clip = new
+            {
+                clip.Id,
+                clip.TranscribedText,
+                clip.Confidence,
+                clip.TranscribedAt,
+                status = clip.Status.ToString()
+            }
+        });
+    }
+
+    /// <summary>
+    /// Update the edited transcription text.
+    /// </summary>
+    [HttpPut("voice-clip/{clipId}/text")]
+    public async Task<IActionResult> UpdateVoiceClipText(int clipId, [FromBody] UpdateClipTextRequest request)
+    {
+        if (_voiceClipService == null)
+        {
+            return Ok(new { success = false, error = "Voice clip service not available" });
+        }
+
+        var clip = await _voiceClipService.UpdateTranscriptionAsync(clipId, request.EditedText);
+        if (clip == null)
+        {
+            return Ok(new { success = false, error = "Clip not found" });
+        }
+
+        return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Delete a voice clip.
+    /// </summary>
+    [HttpDelete("voice-clip/{clipId}")]
+    public async Task<IActionResult> DeleteVoiceClip(int clipId)
+    {
+        if (_voiceClipService == null)
+        {
+            return Ok(new { success = false, error = "Voice clip service not available" });
+        }
+
+        var result = await _voiceClipService.DeleteClipAsync(clipId);
+        return Ok(new { success = result });
     }
 
     // ==================== HELPERS ====================

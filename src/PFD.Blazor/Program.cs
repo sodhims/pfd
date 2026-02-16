@@ -85,6 +85,9 @@ else
     Console.WriteLine("Azure Speech not configured (set AzureSpeech:Key or AZURE_SPEECH_KEY)");
 }
 
+// Voice Clip Service - for saving and managing voice recordings
+builder.Services.AddScoped<IVoiceClipService, VoiceClipService>();
+
 // External Calendar Services - configure with your credentials
 var googleClientId = builder.Configuration["Google:ClientId"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
 var googleClientSecret = builder.Configuration["Google:ClientSecret"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");
