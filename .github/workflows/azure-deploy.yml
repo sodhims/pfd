@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: PFDBlazor20260128085603
+  AZURE_WEBAPP_NAME: pfdblazor20260128085603-fkdphsd3agehcrek
   DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: 'src/PFD.Blazor/PFD.Blazor.csproj'
 
