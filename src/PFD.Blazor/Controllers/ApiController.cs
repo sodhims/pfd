@@ -448,22 +448,36 @@ public class ApiController : ControllerBase
     /// Tests Azure Speech Service connection and shows diagnostic info.
     /// </summary>
     [HttpGet("voice-test")]
-    public async Task<IActionResult> TestVoiceConnection()
+    public async Task<IActionResult> TestVoiceConnection([FromServices] IConfiguration config)
     {
-        // Environment diagnostics
+        // Check ALL possible sources for the key
+        var configKey = config["AZURE_SPEECH_KEY"];
+        var configNestedKey = config["AzureSpeech:Key"];
         var envKey = Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
+        var configRegion = config["AZURE_SPEECH_REGION"] ?? config["AzureSpeech:Region"];
         var envRegion = Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION");
+
+        var diagnostics = new {
+            configKeySet = !string.IsNullOrEmpty(configKey),
+            configKeyLen = configKey?.Length ?? 0,
+            configNestedKeySet = !string.IsNullOrEmpty(configNestedKey),
+            envKeySet = !string.IsNullOrEmpty(envKey),
+            envKeyLen = envKey?.Length ?? 0,
+            configRegion = configRegion ?? "(not set)",
+            envRegion = envRegion ?? "(not set)",
+            allConfigKeys = config.AsEnumerable()
+                .Where(x => x.Key.Contains("AZURE", StringComparison.OrdinalIgnoreCase) ||
+                           x.Key.Contains("Speech", StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.Key)
+                .ToList()
+        };
 
         if (_speechService == null)
         {
             return Ok(new {
                 success = false,
-                message = "Azure Speech Service not registered. Set AZURE_SPEECH_KEY environment variable and restart.",
-                diagnostics = new {
-                    envKeySet = !string.IsNullOrEmpty(envKey),
-                    envKeyLength = envKey?.Length ?? 0,
-                    envRegion = envRegion ?? "(not set)"
-                }
+                message = "Azure Speech Service not registered at startup. Check Application Settings.",
+                diagnostics
             });
         }
 
@@ -472,11 +486,7 @@ public class ApiController : ControllerBase
             return Ok(new {
                 success = false,
                 message = "Azure Speech Service not configured. Key or region is missing.",
-                diagnostics = new {
-                    envKeySet = !string.IsNullOrEmpty(envKey),
-                    envKeyLength = envKey?.Length ?? 0,
-                    envRegion = envRegion ?? "(not set)"
-                }
+                diagnostics
             });
         }
 
