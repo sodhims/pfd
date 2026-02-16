@@ -12,7 +12,7 @@ env:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
@@ -30,7 +30,7 @@ jobs:
       run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
 
     - name: Publish
-      run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ${{ github.workspace }}/publish --no-build
+      run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ${{ github.workspace }}/publish -r win-x64 --self-contained false
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v3
