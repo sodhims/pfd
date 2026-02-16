@@ -76,9 +76,16 @@ var azureSpeechKey = builder.Configuration["AzureSpeech:Key"] ?? Environment.Get
 var azureSpeechRegion = builder.Configuration["AzureSpeech:Region"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus";
 if (!string.IsNullOrEmpty(azureSpeechKey))
 {
-    builder.Services.AddSingleton<IAzureSpeechService>(sp =>
-        new AzureSpeechService(azureSpeechKey, azureSpeechRegion, sp.GetRequiredService<ILogger<AzureSpeechService>>()));
-    Console.WriteLine("Azure Speech Service configured");
+    try
+    {
+        builder.Services.AddSingleton<IAzureSpeechService>(sp =>
+            new AzureSpeechService(azureSpeechKey, azureSpeechRegion, sp.GetRequiredService<ILogger<AzureSpeechService>>()));
+        Console.WriteLine("Azure Speech Service configured");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Warning: Could not configure Azure Speech Service: {ex.Message}");
+    }
 }
 else
 {
