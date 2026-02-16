@@ -72,8 +72,16 @@ else
     Console.WriteLine("Claude AI not configured (set Claude:ApiKey or CLAUDE_API_KEY)");
 
 // Azure Speech Service - for voice transcription
-var azureSpeechKey = builder.Configuration["AzureSpeech:Key"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY") ?? "";
-var azureSpeechRegion = builder.Configuration["AzureSpeech:Region"] ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus";
+// Check multiple sources: appsettings, environment variables (Azure App Service uses flat names)
+var azureSpeechKey = builder.Configuration["AzureSpeech:Key"]
+    ?? builder.Configuration["AZURE_SPEECH_KEY"]
+    ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY")
+    ?? "";
+var azureSpeechRegion = builder.Configuration["AzureSpeech:Region"]
+    ?? builder.Configuration["AZURE_SPEECH_REGION"]
+    ?? Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION")
+    ?? "eastus";
+Console.WriteLine($"Azure Speech Key found: {!string.IsNullOrEmpty(azureSpeechKey)}, Region: {azureSpeechRegion}");
 if (!string.IsNullOrEmpty(azureSpeechKey))
 {
     try
