@@ -3,8 +3,10 @@
 @using PFD.Shared.Models
 @using PFD.Shared.Enums
 @using PFD.Services
+@using PFD.Blazor.Services
 @using Microsoft.Extensions.DependencyInjection
 @inject ITaskService TaskService
+@inject IVoiceClipService VoiceClipService
 @inject IAnalysisService AnalysisService
 @inject IAuthService AuthService
 @inject ICalendarCredentialsService CredentialsService
@@ -1806,64 +1808,156 @@
         <div class="modal-overlay" @onclick="CloseVoiceModal">
             <div class="voice-modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
-                    <span>&#127908; Voice Task</span>
+                    <span>&#127908; Voice Tasks</span>
                     <button class="close-btn" @onclick="CloseVoiceModal">&#10005;</button>
                 </div>
                 <div class="modal-body">
+                    @* Recording controls *@
                     @switch (VoiceState)
                     {
                         case VoiceRecordingState.Idle:
-                            <div class="voice-instructions">
-                                <p>Press the button and speak to create a task.</p>
-                                <p class="voice-hint">Example: "Meet with John tomorrow at 2pm to discuss the budget"</p>
+                            <div class="voice-record-section">
+                                <button class="start-recording-btn" @onclick="StartVoiceRecording">
+                                    &#127908; Record New Clip
+                                </button>
                             </div>
-                            <button class="start-recording-btn" @onclick="StartVoiceRecording">
-                                &#127908; Start Recording
-                            </button>
                             break;
 
                         case VoiceRecordingState.Recording:
-                            <div class="recording-indicator">
-                                <span class="recording-dot"></span>
-                                <span class="recording-timer">@FormatRecordingTime(RecordingSeconds)</span>
+                            <div class="voice-record-section">
+                                <div class="recording-indicator">
+                                    <span class="recording-dot"></span>
+                                    <span class="recording-timer">@FormatRecordingTime(RecordingSeconds)</span>
+                                </div>
+                                <p class="recording-hint">Speak now...</p>
+                                <button class="stop-recording-btn" @onclick="StopVoiceRecording">
+                                    &#9632; Stop Recording
+                                </button>
                             </div>
-                            <p class="recording-hint">Speak now...</p>
-                            <button class="stop-recording-btn" @onclick="StopVoiceRecording">
-                                &#9632; Stop Recording
-                            </button>
+                            break;
+
+                        case VoiceRecordingState.Saving:
+                            <div class="voice-record-section">
+                                <div class="transcribing-indicator">
+                                    <div class="spinner"></div>
+                                    <span>Saving clip...</span>
+                                </div>
+                            </div>
                             break;
 
                         case VoiceRecordingState.Transcribing:
-                            <div class="transcribing-indicator">
-                                <div class="spinner"></div>
-                                <span>Transcribing...</span>
+                            <div class="voice-record-section">
+                                <div class="transcribing-indicator">
+                                    <div class="spinner"></div>
+                                    <span>Transcribing...</span>
+                                </div>
                             </div>
                             break;
 
                         case VoiceRecordingState.Preview:
-                            <div class="transcription-preview">
-                                <label>Transcription:</label>
-                                <textarea @bind="VoiceTranscriptionText" rows="3" placeholder="Edit transcription if needed..."></textarea>
+                            <div class="voice-record-section">
+                                <div class="transcription-preview">
+                                    <label>Transcription:</label>
+                                    <textarea @bind="VoiceTranscriptionText" rows="3" placeholder="Edit transcription if needed..."></textarea>
+                                </div>
                             </div>
                             break;
 
                         case VoiceRecordingState.Creating:
-                            <div class="transcribing-indicator">
-                                <div class="spinner"></div>
-                                <span>Creating task...</span>
+                            <div class="voice-record-section">
+                                <div class="transcribing-indicator">
+                                    <div class="spinner"></div>
+                                    <span>Creating task...</span>
+                                </div>
                             </div>
                             break;
 
                         case VoiceRecordingState.Error:
-                            <div class="voice-error">
-                                <span>&#9888; @VoiceErrorMessage</span>
+                            <div class="voice-record-section">
+                                <div class="voice-error">
+                                    <span>&#9888; @VoiceErrorMessage</span>
+                                </div>
+                                <button class="retry-btn" @onclick="ResetVoiceRecording">Try Again</button>
                             </div>
-                            <button class="retry-btn" @onclick="ResetVoiceRecording">Try Again</button>
                             break;
                     }
+
+                    @* Voice clips list *@
+                    <div class="voice-clips-section">
+                        <div class="clips-header">
+                            <span>Voice Clips</span>
+                            @if (IsLoadingClips)
+                            {
+                                <span class="clips-loading">Loading...</span>
+                            }
+                        </div>
+                        @if (VoiceClips.Any())
+                        {
+                            <div class="clips-list">
+                                @foreach (var clip in VoiceClips)
+                                {
+                                    <div class="clip-item @(SelectedVoiceClip?.Id == clip.Id ? "selected" : "")">
+                                        <span class="clip-icon" title="@clip.Status">
+                                            @switch (clip.Status)
+                                            {
+                                                case VoiceClipStatus.Recorded:
+                                                    <text>&#127908;</text>
+                                                    break;
+                                                case VoiceClipStatus.Transcribing:
+                                                    <text>&#8987;</text>
+                                                    break;
+                                                case VoiceClipStatus.Transcribed:
+                                                    <text>&#9989;</text>
+                                                    break;
+                                                case VoiceClipStatus.ConvertedToTask:
+                                                    <text>&#9745;</text>
+                                                    break;
+                                                case VoiceClipStatus.Error:
+                                                    <text>&#9888;</text>
+                                                    break;
+                                            }
+                                        </span>
+                                        <span class="clip-duration">@clip.DurationSeconds.ToString("F1")s</span>
+                                        <span class="clip-text" title="@(clip.EffectiveText)">
+                                            @if (!string.IsNullOrEmpty(clip.EffectiveText))
+                                            {
+                                                @(clip.EffectiveText.Length > 30 ? clip.EffectiveText.Substring(0, 30) + "..." : clip.EffectiveText)
+                                            }
+                                            else
+                                            {
+                                                <em>Not transcribed</em>
+                                            }
+                                        </span>
+                                        <span class="clip-time">@clip.CreatedAt.ToString("HH:mm")</span>
+                                        <div class="clip-actions">
+                                            @if (clip.Status == VoiceClipStatus.Recorded)
+                                            {
+                                                <button class="clip-btn transcribe" @onclick="() => TranscribeClip(clip)" title="Transcribe">
+                                                    &#128196;
+                                                </button>
+                                            }
+                                            @if (clip.Status == VoiceClipStatus.Transcribed)
+                                            {
+                                                <button class="clip-btn create-task" @onclick="() => SelectClipForTask(clip)" title="Create Task">
+                                                    &#10133;
+                                                </button>
+                                            }
+                                            <button class="clip-btn delete" @onclick="() => DeleteClip(clip)" title="Delete">
+                                                &#128465;
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (!IsLoadingClips)
+                        {
+                            <p class="no-clips">No voice clips yet. Record one to get started!</p>
+                        }
+                    </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="cancel-btn" @onclick="CloseVoiceModal">Cancel</button>
+                    <button class="cancel-btn" @onclick="CloseVoiceModal">Close</button>
                     @if (VoiceState == VoiceRecordingState.Preview && !string.IsNullOrWhiteSpace(VoiceTranscriptionText))
                     {
                         <button class="save-btn" @onclick="CreateTaskFromVoice">Create Task</button>
@@ -2002,13 +2096,16 @@
     private int SelectedShareGroupId { get; set; } = 0;
 
     // Voice recording
-    private enum VoiceRecordingState { Idle, Recording, Transcribing, Preview, Creating, Error }
+    private enum VoiceRecordingState { Idle, Recording, Saving, Transcribing, Preview, Creating, Error }
     private bool ShowVoiceModal { get; set; } = false;
     private VoiceRecordingState VoiceState { get; set; } = VoiceRecordingState.Idle;
     private string VoiceTranscriptionText { get; set; } = "";
     private string VoiceErrorMessage { get; set; } = "";
     private int RecordingSeconds { get; set; } = 0;
     private DotNetObjectReference<Planner>? _voiceDotNetRef;
+    private List<VoiceClip> VoiceClips { get; set; } = new();
+    private VoiceClip? SelectedVoiceClip { get; set; }
+    private bool IsLoadingClips { get; set; } = false;
 
     // Appointment Detail Panel (double-click on scheduled task)
     private DailyTask? AppointmentDetailTask { get; set; }
@@ -5293,10 +5390,36 @@ Best regards";
 
             ResetVoiceRecording();
             ShowVoiceModal = true;
+
+            // Load existing clips
+            await LoadVoiceClipsAsync();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error opening voice modal: {ex.Message}");
+        }
+    }
+
+    private async Task LoadVoiceClipsAsync()
+    {
+        if (CurrentUserId == 0) return;
+
+        try
+        {
+            IsLoadingClips = true;
+            StateHasChanged();
+
+            VoiceClips = await VoiceClipService.GetUserClipsAsync(CurrentUserId, 10);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading voice clips: {ex.Message}");
+            VoiceClips = new List<VoiceClip>();
+        }
+        finally
+        {
+            IsLoadingClips = false;
+            StateHasChanged();
         }
     }
 
@@ -5363,45 +5486,44 @@ Best regards";
     {
         try
         {
-            VoiceState = VoiceRecordingState.Transcribing;
+            VoiceState = VoiceRecordingState.Saving;
             StateHasChanged();
 
             // Get audio from JS
             var result = await JSRuntime.InvokeAsync<VoiceRecordingResult>("voiceRecorder.stopRecording");
 
-            // Send to backend for transcription
-            using var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+            // Save the clip to database
+            var audioBytes = Convert.FromBase64String(result.AudioBase64);
+            var clip = await VoiceClipService.SaveClipAsync(
+                CurrentUserId,
+                audioBytes,
+                result.MimeType,
+                result.DurationSeconds);
 
-            var response = await httpClient.PostAsJsonAsync("/api/voice-transcribe", new
-            {
-                AudioBase64 = result.AudioBase64,
-                MimeType = result.MimeType,
-                Locale = "en-US"
-            });
+            // Refresh clips list
+            await LoadVoiceClipsAsync();
 
-            var transcribeResponse = await response.Content.ReadFromJsonAsync<TranscribeAudioResponse>();
-
-            if (transcribeResponse?.Success == true && !string.IsNullOrWhiteSpace(transcribeResponse.Text))
-            {
-                VoiceTranscriptionText = transcribeResponse.Text;
-                VoiceState = VoiceRecordingState.Preview;
-            }
-            else
-            {
-                VoiceErrorMessage = transcribeResponse?.ErrorMessage ?? "Transcription failed. Please try again.";
-                VoiceState = VoiceRecordingState.Error;
-            }
+            // Reset to idle state
+            VoiceState = VoiceRecordingState.Idle;
+            RecordingSeconds = 0;
         }
         catch (Exception ex)
         {
-            VoiceErrorMessage = $"Error: {ex.Message}";
+            VoiceErrorMessage = $"Error saving clip: {ex.Message}";
             VoiceState = VoiceRecordingState.Error;
         }
     }
 
     private async Task CreateTaskFromVoice()
     {
+        // Use the clip-based method if a clip is selected
+        if (SelectedVoiceClip != null)
+        {
+            await CreateTaskFromVoiceClip();
+            return;
+        }
+
+        // Fallback for direct transcription (if any)
         if (string.IsNullOrWhiteSpace(VoiceTranscriptionText) || CurrentUserId == 0)
         {
             return;
@@ -5429,7 +5551,11 @@ Best regards";
             {
                 // Refresh tasks to show new task
                 await LoadTasksAsync();
-                CloseVoiceModal();
+                await LoadVoiceClipsAsync();
+
+                // Reset state
+                VoiceTranscriptionText = "";
+                VoiceState = VoiceRecordingState.Idle;
             }
             else
             {
@@ -5449,6 +5575,116 @@ Best regards";
         var minutes = seconds / 60;
         var secs = seconds % 60;
         return $"{minutes}:{secs:D2}";
+    }
+
+    private async Task TranscribeClip(VoiceClip clip)
+    {
+        try
+        {
+            VoiceState = VoiceRecordingState.Transcribing;
+            SelectedVoiceClip = clip;
+            StateHasChanged();
+
+            var transcribedClip = await VoiceClipService.TranscribeClipAsync(clip.Id);
+
+            if (transcribedClip != null && transcribedClip.Status == VoiceClipStatus.Transcribed)
+            {
+                // Show preview with transcription
+                VoiceTranscriptionText = transcribedClip.EffectiveText;
+                SelectedVoiceClip = transcribedClip;
+                VoiceState = VoiceRecordingState.Preview;
+                await LoadVoiceClipsAsync();
+            }
+            else
+            {
+                VoiceErrorMessage = "Transcription failed. Azure Speech may not be configured.";
+                VoiceState = VoiceRecordingState.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceErrorMessage = $"Transcription error: {ex.Message}";
+            VoiceState = VoiceRecordingState.Error;
+        }
+    }
+
+    private void SelectClipForTask(VoiceClip clip)
+    {
+        SelectedVoiceClip = clip;
+        VoiceTranscriptionText = clip.EffectiveText;
+        VoiceState = VoiceRecordingState.Preview;
+    }
+
+    private async Task DeleteClip(VoiceClip clip)
+    {
+        try
+        {
+            await VoiceClipService.DeleteClipAsync(clip.Id);
+            await LoadVoiceClipsAsync();
+
+            if (SelectedVoiceClip?.Id == clip.Id)
+            {
+                SelectedVoiceClip = null;
+                VoiceTranscriptionText = "";
+                VoiceState = VoiceRecordingState.Idle;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting clip: {ex.Message}");
+        }
+    }
+
+    private async Task CreateTaskFromVoiceClip()
+    {
+        if (SelectedVoiceClip == null || string.IsNullOrWhiteSpace(VoiceTranscriptionText) || CurrentUserId == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            VoiceState = VoiceRecordingState.Creating;
+            StateHasChanged();
+
+            // Call voice-task endpoint
+            using var httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+
+            var response = await httpClient.PostAsJsonAsync("/api/voice-task", new VoiceTaskRequest
+            {
+                UserId = CurrentUserId,
+                TranscribedText = VoiceTranscriptionText,
+                RecordedAt = SelectedVoiceClip.CreatedAt
+            });
+
+            var taskResponse = await response.Content.ReadFromJsonAsync<VoiceTaskResponse>();
+
+            if (taskResponse?.Success == true && taskResponse.TaskId > 0)
+            {
+                // Mark clip as converted
+                await VoiceClipService.ConvertToTaskAsync(SelectedVoiceClip.Id, taskResponse.TaskId);
+
+                // Refresh tasks and clips
+                await LoadTasksAsync();
+                await LoadVoiceClipsAsync();
+
+                // Reset state
+                SelectedVoiceClip = null;
+                VoiceTranscriptionText = "";
+                VoiceState = VoiceRecordingState.Idle;
+            }
+            else
+            {
+                VoiceErrorMessage = taskResponse?.ErrorMessage ?? "Failed to create task.";
+                VoiceState = VoiceRecordingState.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceErrorMessage = $"Error creating task: {ex.Message}";
+            VoiceState = VoiceRecordingState.Error;
+        }
     }
 
     // Helper class for JS interop result
