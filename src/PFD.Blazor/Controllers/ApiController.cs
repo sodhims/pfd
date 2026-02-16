@@ -418,6 +418,26 @@ public class ApiController : ControllerBase
     // ==================== VOICE TRANSCRIPTION ====================
 
     /// <summary>
+    /// Tests Azure Speech Service connection.
+    /// </summary>
+    [HttpGet("voice-test")]
+    public async Task<IActionResult> TestVoiceConnection()
+    {
+        if (_speechService == null)
+        {
+            return Ok(new { success = false, message = "Azure Speech Service not registered. Set AZURE_SPEECH_KEY environment variable and restart." });
+        }
+
+        if (!_speechService.IsConfigured)
+        {
+            return Ok(new { success = false, message = "Azure Speech Service not configured. Key or region is missing." });
+        }
+
+        var result = await _speechService.TestConnectionAsync();
+        return Ok(new { success = result.Success, message = result.Message });
+    }
+
+    /// <summary>
     /// Transcribes audio data to text using Azure Speech Services.
     /// </summary>
     [HttpPost("voice-transcribe")]
