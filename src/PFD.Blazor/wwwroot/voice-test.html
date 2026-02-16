@@ -81,6 +81,21 @@
         let isRecording = false;
         let startTime = null;
 
+        // Check if running in secure context
+        window.addEventListener('DOMContentLoaded', () => {
+            const warningDiv = document.createElement('div');
+            if (!window.isSecureContext) {
+                warningDiv.style.cssText = 'background:#dc3545;color:white;padding:15px;margin-bottom:20px;border-radius:4px;';
+                warningDiv.innerHTML = '<strong>Warning:</strong> This page is not running in a secure context. Recording will fail.<br>Please access via HTTPS or localhost.';
+                document.body.insertBefore(warningDiv, document.body.firstChild.nextSibling);
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                warningDiv.style.cssText = 'background:#dc3545;color:white;padding:15px;margin-bottom:20px;border-radius:4px;';
+                warningDiv.innerHTML = '<strong>Warning:</strong> Your browser does not support audio recording (MediaDevices API not available).';
+                document.body.insertBefore(warningDiv, document.body.firstChild.nextSibling);
+            }
+        });
+
         // Test connection
         async function testConnection() {
             const result = document.getElementById('connectionResult');
@@ -104,7 +119,22 @@
         }
 
         async function startRecording() {
+            const result = document.getElementById('saveResult');
+
+            // Check secure context first
+            if (!window.isSecureContext) {
+                result.textContent = 'Error: Recording requires HTTPS or localhost.\nCurrent origin: ' + window.location.origin;
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                result.textContent = 'Error: MediaDevices API not available in this browser.';
+                return;
+            }
+
             try {
+                result.textContent = 'Requesting microphone permission...';
+
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: { channelCount: 1, sampleRate: 16000 }
                 });
@@ -112,6 +142,10 @@
                 let mimeType = 'audio/webm';
                 if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
                     mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+                    mimeType = 'audio/ogg;codecs=opus';
                 }
 
                 mediaRecorder = new MediaRecorder(stream, { mimeType });
@@ -121,6 +155,10 @@
                     if (e.data.size > 0) audioChunks.push(e.data);
                 };
 
+                mediaRecorder.onerror = (e) => {
+                    result.textContent = 'MediaRecorder error: ' + (e.error?.message || 'Unknown error');
+                };
+
                 mediaRecorder.start(100);
                 isRecording = true;
                 startTime = Date.now();
@@ -128,10 +166,18 @@
                 document.getElementById('recordBtn').textContent = 'Stop Recording';
                 document.getElementById('recordBtn').className = 'danger recording';
                 document.getElementById('recordingStatus').textContent = ' Recording...';
-                document.getElementById('saveResult').textContent = 'Recording in progress...';
+                result.textContent = 'Recording in progress... (mimeType: ' + mimeType + ')';
 
             } catch (error) {
-                document.getElementById('saveResult').textContent = 'Error: ' + error.message;
+                let msg = 'Error: ' + error.message;
+                if (error.name === 'NotAllowedError') {
+                    msg = 'Error: Microphone permission denied.\nPlease allow microphone access in your browser settings.';
+                } else if (error.name === 'NotFoundError') {
+                    msg = 'Error: No microphone found. Please connect a microphone.';
+                } else if (error.name === 'NotSupportedError') {
+                    msg = 'Error: Audio recording not supported.';
+                }
+                result.textContent = msg + '\n\nTechnical: ' + error.name;
             }
         }
 
