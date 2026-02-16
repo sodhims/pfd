@@ -445,19 +445,39 @@ public class ApiController : ControllerBase
     }
 
     /// <summary>
-    /// Tests Azure Speech Service connection.
+    /// Tests Azure Speech Service connection and shows diagnostic info.
     /// </summary>
     [HttpGet("voice-test")]
     public async Task<IActionResult> TestVoiceConnection()
     {
+        // Environment diagnostics
+        var envKey = Environment.GetEnvironmentVariable("AZURE_SPEECH_KEY");
+        var envRegion = Environment.GetEnvironmentVariable("AZURE_SPEECH_REGION");
+
         if (_speechService == null)
         {
-            return Ok(new { success = false, message = "Azure Speech Service not registered. Set AZURE_SPEECH_KEY environment variable and restart." });
+            return Ok(new {
+                success = false,
+                message = "Azure Speech Service not registered. Set AZURE_SPEECH_KEY environment variable and restart.",
+                diagnostics = new {
+                    envKeySet = !string.IsNullOrEmpty(envKey),
+                    envKeyLength = envKey?.Length ?? 0,
+                    envRegion = envRegion ?? "(not set)"
+                }
+            });
         }
 
         if (!_speechService.IsConfigured)
         {
-            return Ok(new { success = false, message = "Azure Speech Service not configured. Key or region is missing." });
+            return Ok(new {
+                success = false,
+                message = "Azure Speech Service not configured. Key or region is missing.",
+                diagnostics = new {
+                    envKeySet = !string.IsNullOrEmpty(envKey),
+                    envKeyLength = envKey?.Length ?? 0,
+                    envRegion = envRegion ?? "(not set)"
+                }
+            });
         }
 
         var result = await _speechService.TestConnectionAsync();

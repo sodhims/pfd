@@ -64,7 +64,31 @@
       "Bash(sqlcmd:*)",
       "Bash(git remote add:*)",
       "Bash(git push:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(timeout /t 4)",
+      "Bash(az --version:*)",
+      "Bash(taskkill //F //PID 11048)",
+      "Bash(git merge:*)",
+      "Bash(cmd /c \"del \\\\?\\\\r:\\\\PFD\\\\nul\")",
+      "Bash(powershell -Command \"Remove-Item -LiteralPath ''\\\\?\\\\r:\\\\PFD\\\\nul'' -Force\")",
+      "Bash(git clean:*)",
+      "Bash(git stash:*)",
+      "Bash(git fetch:*)",
+      "Bash(powershell -Command \"Get-Content ''src/PFD.Blazor/Components/Pages/Planner.razor'' | Select-String ''ondrop'' | Select-Object -First 5\")",
+      "Bash(powershell -Command \"\\(Get-Content ''src/PFD.Blazor/Components/Pages/Planner.razor''\\) -replace ''@ondrop=\"\"\\\\\\(\\\\\\) => OnDropOnSlot\\\\\\(slot\\\\\\)\"\"'', ''@ondrop=\"\"\\(\\) => OnDropOnSlot\\(slot\\)\"\" @ondrop:preventDefault'' | Set-Content ''src/PFD.Blazor/Components/Pages/Planner.razor''\")",
+      "Bash(powershell -Command \"\\(Get-Content ''src/PFD.Blazor/Components/Pages/Planner.razor'' -Raw\\)\")",
+      "Bash(node -e:*)",
+      "Bash(node:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd task prefetch cache for instant date switching on mobile\n\n- Added Dictionary<DateTime, List<DailyTask>> cache for ±7 days\n- Prefetch nearby dates in background after loading current date\n- Use cached data when switching dates for instant response\n- Invalidate cache when tasks are created/updated/deleted/moved\n- Auto-cleanup of cache entries older than ±14 days\n- forceRefresh parameter to bypass cache when needed\n\nThis enables smooth horizontal scrolling on mobile day-roller\nwith instant schedule updates as the user changes dates.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(gh run:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nEnhance mobile day-roller center selection frame\n\n- Made selection frame slightly larger \\(62x68px\\)\n- Thicker border \\(4px\\) for better visibility\n- Added subtle background highlight\n- Darker overlay outside selection \\(0.25 opacity\\)\n- Added inner glow effect for depth\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git reset:*)",
+      "Bash(az webapp list:*)",
+      "Bash(where:*)",
+      "Bash(powershell -Command \"Compress-Archive -Path ''./publish/*'' -DestinationPath ''./deploy.zip'' -Force\")",
+      "Bash(del \"r:\\\\PFD\\\\src\\\\PFD.Blazor\\\\publish\\\\wwwroot\\\\Components\\\\Layout\\\\ReconnectModal.razor.js\")",
+      "Bash(del \"r:\\\\PFD\\\\src\\\\PFD.Blazor\\\\wwwroot\\\\Components\\\\Layout\\\\ReconnectModal.razor.js\")"
     ]
   }
 }

@@ -1,4 +1,6 @@
-﻿<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
+@namespace PFD.Blazor.Components.Layout
+
+<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
 
 <dialog id="components-reconnect-modal" data-nosnippet>
     <div class="components-reconnect-container">
@@ -29,3 +31,7 @@
         </p>
     </div>
 </dialog>
+
+@code {
+    // This component handles Blazor reconnection UI
+}
