@@ -766,19 +766,13 @@
                         {
                             @foreach (var task in OverdueTasks)
                             {
-                                <div class="task-row waiting @(task.ScheduledTime.HasValue ? "was-scheduled" : "") @(DraggingTaskId == task.Id ? "dragging" : "") @(!task.IsCompleted ? "draggable-task" : "")"
+                                <div class="task-row waiting @(DraggingTaskId == task.Id ? "dragging" : "") @(!task.IsCompleted ? "draggable-task" : "")"
                                      draggable="@(!task.IsCompleted ? "true" : "false")"
                                      @ondragstart="() => OnDragStart(task)"
                                      @ondragend="OnDragEnd"
                                      @ondblclick="() => OpenTimeEditor(task)"
                                      data-task-id="@task.Id">
                                     <span class="drag-handle" title="Drag to schedule">&#9776;</span>
-                                    @if (task.ScheduledTime.HasValue)
-                                    {
-                                        <span class="task-time waiting-time" title="Originally scheduled for @FormatTime(task.ScheduledTime)">
-                                            @FormatTime(task.ScheduledTime)
-                                        </span>
-                                    }
                                     <span class="task-title">@task.Title</span>
                                     <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
                                     @{
