@@ -1029,6 +1029,72 @@
         </div>
     }
 
+    <!-- Similar Tasks Modal -->
+    @if (ShowSimilarTasksModal && PendingNewTask != null)
+    {
+        <div class="modal-overlay" @onclick="CloseSimilarTasksModal">
+            <div class="similar-tasks-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>Similar Tasks Found</span>
+                    <button class="close-btn" @onclick="CloseSimilarTasksModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="new-task-preview">
+                        Creating: <strong>@PendingNewTask.Title</strong>
+                        @if (PendingNewTask.ScheduledTime.HasValue)
+                        {
+                            <span class="preview-time">at @FormatTime(PendingNewTask.ScheduledTime)</span>
+                        }
+                    </div>
+                    <div class="similar-tasks-list">
+                        <div class="list-label">Similar existing tasks:</div>
+                        @foreach (var task in SimilarTaskMatches)
+                        {
+                            <div class="similar-task-item @(SelectedSimilarTask?.Id == task.Id ? "selected" : "")"
+                                 @onclick="() => SelectSimilarTask(task)">
+                                <span class="task-title">@task.Title</span>
+                                <span class="task-meta">
+                                    @task.TaskDate.ToString("M/d")
+                                    @if (task.ScheduledTime.HasValue)
+                                    {
+                                        @(" " + FormatTime(task.ScheduledTime))
+                                    }
+                                    @if (task.RecurrenceType != RecurrenceType.None)
+                                    {
+                                        <span class="recurring-badge">Recurring</span>
+                                    }
+                                </span>
+                            </div>
+                        }
+                    </div>
+                    <div class="action-options">
+                        <label class="action-option">
+                            <input type="radio" name="similarAction" checked="@(SelectedAction == SimilarTaskAction.CreateNew)"
+                                   @onchange="() => SelectedAction = SimilarTaskAction.CreateNew" />
+                            Create as new task
+                        </label>
+                        <label class="action-option @(SelectedSimilarTask == null ? "disabled" : "")">
+                            <input type="radio" name="similarAction" checked="@(SelectedAction == SimilarTaskAction.AddAsSubtask)"
+                                   disabled="@(SelectedSimilarTask == null)"
+                                   @onchange="() => SelectedAction = SimilarTaskAction.AddAsSubtask" />
+                            Add as subtask to selected
+                        </label>
+                        <label class="action-option @(SelectedSimilarTask == null ? "disabled" : "")">
+                            <input type="radio" name="similarAction" checked="@(SelectedAction == SimilarTaskAction.ReplaceTask)"
+                                   disabled="@(SelectedSimilarTask == null)"
+                                   @onchange="() => SelectedAction = SimilarTaskAction.ReplaceTask" />
+                            Replace selected task
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseSimilarTasksModal">Cancel</button>
+                    <button class="save-btn" @onclick="ConfirmSimilarTaskAction">Continue</button>
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- Reschedule Modal -->
     @if (ReschedulingTask != null)
     {
@@ -2066,6 +2132,15 @@
     private string RescheduleTimePreset { get; set; } = "none";  // morning, afternoon, evening, custom, none
     private string RescheduleCustomTime { get; set; } = "";
 
+    // Similar task detection
+    private bool ShowSimilarTasksModal { get; set; } = false;
+    private List<DailyTask> SimilarTaskMatches { get; set; } = new();
+    private DailyTask? PendingNewTask { get; set; }
+    private DailyTask? SelectedSimilarTask { get; set; }
+    private SimilarTaskAction SelectedAction { get; set; } = SimilarTaskAction.CreateNew;
+
+    private enum SimilarTaskAction { CreateNew, AddAsSubtask, ReplaceTask }
+
     // AI properties
     private bool ShowAiPanel { get; set; } = false;
     private bool IsAiLoading { get; set; } = false;
@@ -2678,10 +2753,28 @@
             task.IsAllDay = false;
         }
 
+        // Check for similar tasks before creating
+        var similarTasks = FindSimilarTasks(parseResult.CleanedTitle);
+        if (similarTasks.Any())
+        {
+            PendingNewTask = task;
+            SimilarTaskMatches = similarTasks;
+            SelectedSimilarTask = null;
+            SelectedAction = SimilarTaskAction.CreateNew;
+            ShowSimilarTasksModal = true;
+            return; // Wait for user decision in modal
+        }
+
+        // No similar tasks found, create directly
+        await CreateTaskDirectly(task, parseResult.RecurrenceType != RecurrenceType.None);
+    }
+
+    private async Task CreateTaskDirectly(DailyTask task, bool hasRecurrence)
+    {
         await TaskService.CreateTaskAsync(task);
 
         // Generate recurring instances if recurrence is set
-        if (parseResult.RecurrenceType != RecurrenceType.None)
+        if (hasRecurrence)
         {
             await GenerateRecurringInstances(task);
         }
@@ -2690,6 +2783,73 @@
         NewTaskTimeText = "";
         InvalidateTaskCache(SelectedDate);
         await LoadTasksAsync(forceRefresh: true);
+    }
+
+    // Similar task modal handlers
+    private void SelectSimilarTask(DailyTask task)
+    {
+        SelectedSimilarTask = task;
+        // Auto-select "Add as subtask" when clicking a task (more intuitive)
+        if (SelectedAction == SimilarTaskAction.CreateNew)
+        {
+            SelectedAction = SimilarTaskAction.AddAsSubtask;
+        }
+    }
+
+    private void CloseSimilarTasksModal()
+    {
+        ShowSimilarTasksModal = false;
+        PendingNewTask = null;
+        SimilarTaskMatches.Clear();
+        SelectedSimilarTask = null;
+    }
+
+    private async Task ConfirmSimilarTaskAction()
+    {
+        if (PendingNewTask == null) return;
+
+        switch (SelectedAction)
+        {
+            case SimilarTaskAction.CreateNew:
+                await CreateTaskDirectly(PendingNewTask, PendingNewTask.RecurrenceType != RecurrenceType.None);
+                break;
+
+            case SimilarTaskAction.AddAsSubtask:
+                if (SelectedSimilarTask != null)
+                {
+                    PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
+                    await TaskService.CreateTaskAsync(PendingNewTask);
+                    NewTaskText = "";
+                    NewTaskTimeText = "";
+                    InvalidateTaskCache(SelectedDate);
+                    await LoadTasksAsync(forceRefresh: true);
+                }
+                break;
+
+            case SimilarTaskAction.ReplaceTask:
+                if (SelectedSimilarTask != null)
+                {
+                    // Update the existing task with new info
+                    SelectedSimilarTask.Title = PendingNewTask.Title;
+                    SelectedSimilarTask.ScheduledTime = PendingNewTask.ScheduledTime;
+                    SelectedSimilarTask.IsAllDay = PendingNewTask.IsAllDay;
+                    SelectedSimilarTask.TaskDate = PendingNewTask.TaskDate;
+                    if (PendingNewTask.RecurrenceType != RecurrenceType.None)
+                    {
+                        SelectedSimilarTask.RecurrenceType = PendingNewTask.RecurrenceType;
+                        SelectedSimilarTask.RecurrenceDays = PendingNewTask.RecurrenceDays;
+                        SelectedSimilarTask.RecurrenceEndDate = PendingNewTask.RecurrenceEndDate;
+                    }
+                    await TaskService.UpdateTaskAsync(SelectedSimilarTask);
+                    NewTaskText = "";
+                    NewTaskTimeText = "";
+                    InvalidateTaskCache(SelectedDate);
+                    await LoadTasksAsync(forceRefresh: true);
+                }
+                break;
+        }
+
+        CloseSimilarTasksModal();
     }
 
     private async Task ToggleStarted(DailyTask task)
@@ -4071,6 +4231,32 @@
         }
 
         return start; // Fallback to start date if day not recognized
+    }
+
+    private List<DailyTask> FindSimilarTasks(string newTitle)
+    {
+        if (string.IsNullOrWhiteSpace(newTitle)) return new List<DailyTask>();
+
+        var searchTerms = newTitle.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2) // Skip short words like "at", "to", "for"
+            .ToList();
+
+        if (!searchTerms.Any()) return new List<DailyTask>();
+
+        var allTasks = ScheduledTasks.Concat(AllDayTasks).Concat(OverdueTasks)
+            .Where(t => !t.IsCompleted)
+            .ToList();
+
+        return allTasks.Where(t =>
+        {
+            var title = t.Title.ToLower();
+            // Match if any significant word from new task is in existing task
+            return searchTerms.Any(term => title.Contains(term)) ||
+                   title.Contains(newTitle.ToLower().Trim());
+        })
+        .OrderByDescending(t => t.TaskDate) // Most recent first
+        .Take(5) // Limit results
+        .ToList();
     }
 
     private class CalendarDay

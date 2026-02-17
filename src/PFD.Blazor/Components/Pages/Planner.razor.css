@@ -3301,6 +3301,115 @@
     opacity: 0.9;
 }
 
+/* Similar Tasks Modal */
+.similar-tasks-modal {
+    background: white;
+    border-radius: 8px;
+    width: 420px;
+    max-width: 90vw;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.new-task-preview {
+    background: #E3F2FD;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.new-task-preview .preview-time {
+    color: #1565C0;
+    margin-left: 8px;
+}
+
+.similar-tasks-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+
+.similar-tasks-list .list-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.similar-task-item {
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.15s ease;
+}
+
+.similar-task-item:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+.similar-task-item.selected {
+    border-color: #1976D2;
+    background: #E3F2FD;
+}
+
+.similar-task-item .task-title {
+    font-weight: 500;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.similar-task-item .task-meta {
+    font-size: 12px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.similar-task-item .recurring-badge {
+    background: #7B1FA2;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+}
+
+.action-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    background: #fafafa;
+    border-radius: 6px;
+}
+
+.action-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.action-option input[type="radio"] {
+    margin: 0;
+}
+
+.action-option.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Reschedule Modal */
 .reschedule-modal {
     background: white;
