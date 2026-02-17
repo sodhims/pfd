@@ -429,4 +429,140 @@ Return at most 20 matches, ordered by relevance. Today is " + DateTime.Today.ToS
         public Dictionary<string, int>? Scores { get; set; }
         public string? Summary { get; set; }
     }
+
+    public async Task<List<SimilarTaskMatch>> FindSimilarTasksAsync(string newTaskTitle, List<DailyTask> existingTasks)
+    {
+        var results = new List<SimilarTaskMatch>();
+
+        if (string.IsNullOrWhiteSpace(newTaskTitle) || !existingTasks.Any())
+            return results;
+
+        // Filter to only incomplete tasks
+        var candidates = existingTasks.Where(t => !t.IsCompleted).ToList();
+        if (!candidates.Any())
+            return results;
+
+        // Build compact task list for AI
+        var taskData = candidates.Select(t => new
+        {
+            id = t.Id,
+            title = t.Title,
+            date = t.TaskDate.ToString("M/d"),
+            recurring = t.RecurrenceType != Shared.Enums.RecurrenceType.None
+        }).ToList();
+
+        // Fallback: simple text matching if no API key
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            return DoSimpleSimilaritySearch(newTaskTitle, candidates);
+        }
+
+        try
+        {
+            var systemPrompt = @"You are a task duplicate detector. Given a NEW task being created and a list of EXISTING tasks, identify which existing tasks are semantically similar or potentially duplicates.
+
+Consider:
+- Same topic/subject (e.g., 'capstone meeting' ~ 'senior project discussion')
+- Same action on same entity (e.g., 'email John' ~ 'send John email')
+- Related activities (e.g., 'prepare slides' ~ 'presentation prep')
+- Recurring variations (e.g., 'weekly standup' ~ 'standup meeting')
+
+Respond with JSON only:
+{
+  ""matches"": [
+    {""id"": <task_id>, ""score"": <0-100>, ""reason"": ""<brief reason>""}
+  ]
+}
+
+Only include tasks with score >= 60. Return empty matches array if no similar tasks.";
+
+            var userPrompt = $@"NEW TASK: ""{newTaskTitle}""
+
+EXISTING TASKS:
+{System.Text.Json.JsonSerializer.Serialize(taskData)}";
+
+            var content = await CallClaudeAsync(systemPrompt, userPrompt);
+            if (!string.IsNullOrEmpty(content))
+            {
+                // Extract JSON from response
+                var jsonMatch = System.Text.RegularExpressions.Regex.Match(content, @"\{[\s\S]*\}");
+                if (jsonMatch.Success)
+                {
+                    var aiResponse = System.Text.Json.JsonSerializer.Deserialize<SimilarTaskAiResponse>(
+                        jsonMatch.Value,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (aiResponse?.Matches != null)
+                    {
+                        foreach (var match in aiResponse.Matches.OrderByDescending(m => m.Score).Take(5))
+                        {
+                            results.Add(new SimilarTaskMatch
+                            {
+                                TaskId = match.Id,
+                                RelevanceScore = match.Score,
+                                Reason = match.Reason ?? "Similar task"
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to simple text search on error
+            return DoSimpleSimilaritySearch(newTaskTitle, candidates);
+        }
+
+        // If AI found nothing, try simple text search as fallback
+        if (!results.Any())
+        {
+            return DoSimpleSimilaritySearch(newTaskTitle, candidates);
+        }
+
+        return results;
+    }
+
+    private List<SimilarTaskMatch> DoSimpleSimilaritySearch(string newTaskTitle, List<DailyTask> candidates)
+    {
+        var results = new List<SimilarTaskMatch>();
+        var searchTerms = newTaskTitle.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2)
+            .ToList();
+
+        if (!searchTerms.Any()) return results;
+
+        foreach (var task in candidates)
+        {
+            var title = task.Title.ToLower();
+            var matchCount = searchTerms.Count(term => title.Contains(term));
+
+            if (matchCount > 0 || title.Contains(newTaskTitle.ToLower().Trim()))
+            {
+                var score = (int)((double)matchCount / searchTerms.Count * 100);
+                if (title.Contains(newTaskTitle.ToLower().Trim()))
+                    score = Math.Max(score, 80);
+
+                results.Add(new SimilarTaskMatch
+                {
+                    TaskId = task.Id,
+                    RelevanceScore = Math.Min(score, 100),
+                    Reason = "Text match"
+                });
+            }
+        }
+
+        return results.OrderByDescending(r => r.RelevanceScore).Take(5).ToList();
+    }
+
+    private class SimilarTaskAiResponse
+    {
+        public List<SimilarTaskAiMatch>? Matches { get; set; }
+    }
+
+    private class SimilarTaskAiMatch
+    {
+        public int Id { get; set; }
+        public int Score { get; set; }
+        public string? Reason { get; set; }
+    }
 }

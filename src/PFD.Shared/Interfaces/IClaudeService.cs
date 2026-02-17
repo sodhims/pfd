@@ -33,4 +33,17 @@ public interface IClaudeService
     /// AI-powered semantic search across all tasks
     /// </summary>
     Task<TaskSearchResponse> SearchTasksAsync(string query, List<DailyTask> allTasks);
+
+    /// <summary>
+    /// Find tasks semantically similar to a new task being created
+    /// Returns task IDs of similar tasks with relevance scores
+    /// </summary>
+    Task<List<SimilarTaskMatch>> FindSimilarTasksAsync(string newTaskTitle, List<DailyTask> existingTasks);
+}
+
+public class SimilarTaskMatch
+{
+    public int TaskId { get; set; }
+    public int RelevanceScore { get; set; } // 0-100
+    public string Reason { get; set; } = "";
 }

@@ -2753,8 +2753,8 @@
             task.IsAllDay = false;
         }
 
-        // Check for similar tasks before creating
-        var similarTasks = FindSimilarTasks(parseResult.CleanedTitle);
+        // Check for similar tasks before creating (AI-augmented)
+        var similarTasks = await FindSimilarTasksAsync(parseResult.CleanedTitle);
         if (similarTasks.Any())
         {
             PendingNewTask = task;
@@ -4233,29 +4233,56 @@
         return start; // Fallback to start date if day not recognized
     }
 
-    private List<DailyTask> FindSimilarTasks(string newTitle)
+    private async Task<List<DailyTask>> FindSimilarTasksAsync(string newTitle)
     {
         if (string.IsNullOrWhiteSpace(newTitle)) return new List<DailyTask>();
-
-        var searchTerms = newTitle.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(w => w.Length > 2) // Skip short words like "at", "to", "for"
-            .ToList();
-
-        if (!searchTerms.Any()) return new List<DailyTask>();
 
         var allTasks = ScheduledTasks.Concat(AllDayTasks).Concat(OverdueTasks)
             .Where(t => !t.IsCompleted)
             .ToList();
 
+        if (!allTasks.Any()) return new List<DailyTask>();
+
+        try
+        {
+            // Use AI-powered similarity detection
+            var matches = await ClaudeService.FindSimilarTasksAsync(newTitle, allTasks);
+
+            if (matches.Any())
+            {
+                // Map the AI results back to actual task objects
+                var matchedTasks = new List<DailyTask>();
+                foreach (var match in matches.OrderByDescending(m => m.RelevanceScore))
+                {
+                    var task = allTasks.FirstOrDefault(t => t.Id == match.TaskId);
+                    if (task != null)
+                    {
+                        matchedTasks.Add(task);
+                    }
+                }
+                return matchedTasks.Take(5).ToList();
+            }
+        }
+        catch
+        {
+            // Fall through to basic search on error
+        }
+
+        // Fallback: basic text matching
+        var searchTerms = newTitle.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2)
+            .ToList();
+
+        if (!searchTerms.Any()) return new List<DailyTask>();
+
         return allTasks.Where(t =>
         {
             var title = t.Title.ToLower();
-            // Match if any significant word from new task is in existing task
             return searchTerms.Any(term => title.Contains(term)) ||
                    title.Contains(newTitle.ToLower().Trim());
         })
-        .OrderByDescending(t => t.TaskDate) // Most recent first
-        .Take(5) // Limit results
+        .OrderByDescending(t => t.TaskDate)
+        .Take(5)
         .ToList();
     }
 
