@@ -1000,9 +1000,17 @@
                     <div class="time-picker-row">
                         <label>Time:</label>
                         <div class="time-input-group">
-                            <input type="text" @bind="EditingTimeHour" placeholder="HH" maxlength="2" class="time-part" />
+                            <div class="time-spinner">
+                                <button class="spin-btn up" @onclick="() => AdjustHour(1)">&#9650;</button>
+                                <input type="text" @bind="EditingTimeHour" class="time-part" readonly />
+                                <button class="spin-btn down" @onclick="() => AdjustHour(-1)">&#9660;</button>
+                            </div>
                             <span class="time-separator">:</span>
-                            <input type="text" @bind="EditingTimeMinute" placeholder="MM" maxlength="2" class="time-part" />
+                            <div class="time-spinner">
+                                <button class="spin-btn up" @onclick="() => AdjustMinute(5)">&#9650;</button>
+                                <input type="text" @bind="EditingTimeMinute" class="time-part" readonly />
+                                <button class="spin-btn down" @onclick="() => AdjustMinute(-5)">&#9660;</button>
+                            </div>
                             <select @bind="EditingTimeAmPm" class="ampm-select">
                                 <option value="AM">AM</option>
                                 <option value="PM">PM</option>
@@ -3740,6 +3748,28 @@
     private void CloseTimeEditor()
     {
         EditingTimeTask = null;
+    }
+
+    private void AdjustHour(int delta)
+    {
+        if (int.TryParse(EditingTimeHour, out var hour))
+        {
+            hour += delta;
+            if (hour > 12) hour = 1;
+            if (hour < 1) hour = 12;
+            EditingTimeHour = hour.ToString("D2");
+        }
+    }
+
+    private void AdjustMinute(int delta)
+    {
+        if (int.TryParse(EditingTimeMinute, out var minute))
+        {
+            minute += delta;
+            if (minute >= 60) minute = 0;
+            if (minute < 0) minute = 55;
+            EditingTimeMinute = minute.ToString("D2");
+        }
     }
 
     private async Task SaveTaskTime()

@@ -3266,6 +3266,51 @@
     cursor: pointer;
 }
 
+.time-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.time-spinner .time-part {
+    width: 50px;
+    text-align: center;
+    padding: 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 500;
+    background: white;
+}
+
+.time-spinner .spin-btn {
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    padding: 2px 12px;
+    cursor: pointer;
+    font-size: 10px;
+    color: #666;
+    transition: background 0.15s;
+}
+
+.time-spinner .spin-btn.up {
+    border-radius: 4px 4px 0 0;
+    border-bottom: none;
+}
+
+.time-spinner .spin-btn.down {
+    border-radius: 0 0 4px 4px;
+    border-top: none;
+}
+
+.time-spinner .spin-btn:hover {
+    background: #e0e0e0;
+}
+
+.time-spinner .spin-btn:active {
+    background: #d0d0d0;
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;
