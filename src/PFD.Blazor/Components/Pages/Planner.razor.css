@@ -2673,6 +2673,16 @@
     font-weight: 600;
 }
 
+.days-waiting {
+    color: #D32F2F;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(211, 47, 47, 0.15);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+}
+
 .waiting-time {
     color: #7B1FA2;
     font-size: 12px;
@@ -3223,6 +3233,37 @@
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
+}
+
+.time-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+}
+
+.time-input-group .time-part {
+    width: 50px;
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.time-input-group .time-separator {
+    font-weight: bold;
+    color: #666;
+}
+
+.time-input-group .ampm-select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
 }
 
 .modal-footer {

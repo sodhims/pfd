@@ -781,6 +781,13 @@
                                     }
                                     <span class="task-title">@task.Title</span>
                                     <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
+                                    @{
+                                        var daysWaiting = task.DaysInQueue > 0 ? task.DaysInQueue : (DateTime.Today - task.TaskDate.Date).Days;
+                                    }
+                                    @if (daysWaiting > 0)
+                                    {
+                                        <span class="days-waiting" title="@daysWaiting day(s) in waiting">@daysWaiting d</span>
+                                    }
                                     <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
                                     <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
                                 </div>
@@ -998,7 +1005,15 @@
                     <div class="modal-task-title">@EditingTimeTask.Title</div>
                     <div class="time-picker-row">
                         <label>Time:</label>
-                        <input type="text" @bind="EditingTimeValue" placeholder="HH:mm (e.g. 09:00)" />
+                        <div class="time-input-group">
+                            <input type="text" @bind="EditingTimeHour" placeholder="HH" maxlength="2" class="time-part" />
+                            <span class="time-separator">:</span>
+                            <input type="text" @bind="EditingTimeMinute" placeholder="MM" maxlength="2" class="time-part" />
+                            <select @bind="EditingTimeAmPm" class="ampm-select">
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="duration-row">
                         <label>Duration:</label>
@@ -2045,7 +2060,9 @@
 
     // Time editor
     private DailyTask? EditingTimeTask { get; set; }
-    private string EditingTimeValue { get; set; } = "09:00";
+    private string EditingTimeHour { get; set; } = "09";
+    private string EditingTimeMinute { get; set; } = "00";
+    private string EditingTimeAmPm { get; set; } = "AM";
     private int EditingDuration { get; set; } = 30;
 
     // Reschedule modal
@@ -3546,9 +3563,23 @@
         if (IsTaskInPast(task)) return;
 
         EditingTimeTask = task;
-        EditingTimeValue = task.ScheduledTime.HasValue
-            ? task.ScheduledTime.Value.ToString(@"hh\:mm")
-            : "09:00";
+        if (task.ScheduledTime.HasValue)
+        {
+            var time = task.ScheduledTime.Value;
+            var hour24 = time.Hours;
+            var minute = time.Minutes;
+            EditingTimeAmPm = hour24 >= 12 ? "PM" : "AM";
+            var hour12 = hour24 % 12;
+            if (hour12 == 0) hour12 = 12;
+            EditingTimeHour = hour12.ToString("D2");
+            EditingTimeMinute = minute.ToString("D2");
+        }
+        else
+        {
+            EditingTimeHour = "09";
+            EditingTimeMinute = "00";
+            EditingTimeAmPm = "AM";
+        }
         EditingDuration = task.DurationMinutes > 0 ? task.DurationMinutes : 30;
     }
 
@@ -3562,9 +3593,19 @@
         if (EditingTimeTask == null) return;
 
         TimeSpan? time = null;
-        if (TimeSpan.TryParse(EditingTimeValue, out var parsed))
+        if (int.TryParse(EditingTimeHour, out var hour12) && int.TryParse(EditingTimeMinute, out var minute))
         {
-            time = parsed;
+            // Convert 12-hour to 24-hour format
+            var hour24 = hour12;
+            if (EditingTimeAmPm == "AM")
+            {
+                if (hour12 == 12) hour24 = 0; // 12 AM = 00:00
+            }
+            else // PM
+            {
+                if (hour12 != 12) hour24 = hour12 + 12; // 1-11 PM = 13-23
+            }
+            time = new TimeSpan(hour24, minute, 0);
         }
 
         await TaskService.ScheduleTaskTimeAsync(EditingTimeTask.Id, time, CurrentUserId, EditingDuration);
