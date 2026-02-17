@@ -782,6 +782,7 @@
                                     {
                                         <span class="days-waiting" title="@daysWaiting day(s) in waiting">@daysWaiting d</span>
                                     }
+                                    <button class="match-btn" title="Find similar tasks" @onclick="() => FindMatchingTasksForWaiting(task)">&#128269;</button>
                                     <button class="move-btn" title="Move to today" @onclick="() => MoveToToday(task)">&#10132;</button>
                                     <button class="delete-btn" @onclick="() => DeleteOverdueTask(task)">&#128465;</button>
                                 </div>
@@ -2794,6 +2795,29 @@
     }
 
     // Similar task modal handlers
+    private async Task FindMatchingTasksForWaiting(DailyTask waitingTask)
+    {
+        // Find similar tasks to this waiting task (for potential merging/replacing)
+        var similarTasks = await FindSimilarTasksAsync(waitingTask.Title);
+
+        // Remove the waiting task itself from matches
+        similarTasks = similarTasks.Where(t => t.Id != waitingTask.Id).ToList();
+
+        if (similarTasks.Any())
+        {
+            PendingNewTask = waitingTask;
+            SimilarTaskMatches = similarTasks;
+            SelectedSimilarTask = null;
+            SelectedAction = SimilarTaskAction.CreateNew;
+            ShowSimilarTasksModal = true;
+        }
+        else
+        {
+            // No similar tasks found - could show a message or just do nothing
+            Console.WriteLine($"No similar tasks found for: {waitingTask.Title}");
+        }
+    }
+
     private void SelectSimilarTask(DailyTask task)
     {
         SelectedSimilarTask = task;

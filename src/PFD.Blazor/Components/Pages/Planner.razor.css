@@ -478,6 +478,18 @@
     color: #1A1A1A;
 }
 
+.theme-bigly .match-btn {
+    background: #1A1A1A;
+    color: #FFD700;
+    font-weight: bold;
+    border: 2px solid #FFD700;
+}
+
+.theme-bigly .match-btn:hover {
+    background: #FFD700;
+    color: #1A1A1A;
+}
+
 .theme-bigly .task-header {
     background: linear-gradient(180deg, #FFFFFF 0%, #FFFEF5 100%);
     border: 2px solid #FFD700;
@@ -1055,6 +1067,16 @@
 .theme-vampire .move-btn:hover {
     background: #B22222;
     box-shadow: 0 0 8px rgba(178, 34, 34, 0.5);
+}
+
+.theme-vampire .match-btn {
+    background: #4A0080;
+    color: #FFFFFF;
+}
+
+.theme-vampire .match-btn:hover {
+    background: #6A00B0;
+    box-shadow: 0 0 8px rgba(106, 0, 176, 0.5);
 }
 
 .theme-vampire .task-header {
@@ -2742,6 +2764,21 @@
 
 .move-btn:hover {
     background: #388E3C;
+}
+
+.match-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 4px;
+}
+
+.match-btn:hover {
+    background: #1976D2;
 }
 
 .no-tasks {
