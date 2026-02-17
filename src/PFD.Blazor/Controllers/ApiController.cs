@@ -285,6 +285,37 @@ public class ApiController : ControllerBase
         return Ok();
     }
 
+    // ==================== TASK WORKFLOW ====================
+
+    [HttpPost("tasks/{userId}/process-transitions")]
+    public async Task<IActionResult> ProcessDailyTaskTransitions(int userId)
+    {
+        var count = await _taskService.ProcessDailyTaskTransitionsAsync(userId);
+        return Ok(count);
+    }
+
+    [HttpPost("tasks/{taskId}/move-to-tasks/{userId}")]
+    public async Task<IActionResult> MoveWaitingToTasks(int taskId, int userId)
+    {
+        var task = await _taskService.MoveWaitingToTasksAsync(taskId, userId);
+        if (task == null) return NotFound();
+        return Ok(task);
+    }
+
+    [HttpGet("tasks/{userId}/long-queue")]
+    public async Task<IActionResult> GetLongQueueTasks(int userId, [FromQuery] int daysThreshold = 2)
+    {
+        var tasks = await _taskService.GetLongQueueTasksAsync(userId, daysThreshold);
+        return Ok(tasks);
+    }
+
+    [HttpPost("tasks/{userId}/cleanup-recurring")]
+    public async Task<IActionResult> CleanupIncompleteRecurringTasks(int userId)
+    {
+        var count = await _taskService.CleanupIncompleteRecurringTasksAsync(userId);
+        return Ok(count);
+    }
+
     // ==================== VOICE-TO-TASK (VoicePal Integration) ====================
 
     /// <summary>

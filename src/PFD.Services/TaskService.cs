@@ -107,6 +107,27 @@ public class TaskService : ITaskService
         return await _taskRepository.SearchAllTasksAsync(userId, maxResults);
     }
 
+    // Task workflow transitions
+    public async Task<int> ProcessDailyTaskTransitionsAsync(int userId)
+    {
+        return await _taskRepository.ProcessDailyTaskTransitionsAsync(userId);
+    }
+
+    public async Task<DailyTask?> MoveWaitingToTasksAsync(int taskId, int userId)
+    {
+        return await _taskRepository.MoveWaitingToTasksAsync(taskId, userId);
+    }
+
+    public async Task<List<DailyTask>> GetLongQueueTasksAsync(int userId, int daysThreshold = 2)
+    {
+        return await _taskRepository.GetLongQueueTasksAsync(userId, daysThreshold);
+    }
+
+    public async Task<int> CleanupIncompleteRecurringTasksAsync(int userId)
+    {
+        return await _taskRepository.CleanupIncompleteRecurringTasksAsync(userId);
+    }
+
     // Participant management
     public async Task<List<Participant>> GetAllParticipantsAsync()
     {

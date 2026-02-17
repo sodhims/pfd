@@ -144,6 +144,18 @@ public class DailyTask
     /// </summary>
     public int? RecurrenceParentId { get; set; }
 
+    /// <summary>
+    /// Number of days the task has been in the current queue (Tasks or Waiting)
+    /// Reset to 0 when scheduled, incremented daily for incomplete all-day tasks
+    /// </summary>
+    public int DaysInQueue { get; set; } = 0;
+
+    /// <summary>
+    /// Date when the task's queue status last changed
+    /// Used to calculate DaysInQueue and trigger state transitions
+    /// </summary>
+    public DateTime? QueueEntryDate { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

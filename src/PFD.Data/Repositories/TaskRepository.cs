@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PFD.Shared.Enums;
 using PFD.Shared.Models;
 
 namespace PFD.Data.Repositories;
@@ -418,5 +419,201 @@ public class TaskRepository
                 .ThenInclude(tp => tp.Participant)
             .Include(t => t.Group)
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// Process daily task state transitions:
+    /// - Scheduled tasks not completed at end of day -> Tasks (all-day)
+    /// - Tasks in queue for 2+ days -> Waiting
+    /// - Increment DaysInQueue for all incomplete all-day tasks
+    /// </summary>
+    public async Task<int> ProcessDailyTaskTransitionsAsync(int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var today = DateTime.Today;
+        var transitionCount = 0;
+
+        // 1. Move incomplete scheduled tasks from yesterday to Tasks (all-day) for today
+        var yesterdayScheduledTasks = await context.DailyTasks
+            .Where(t => t.UserId == userId &&
+                        !t.IsCompleted &&
+                        t.TaskDate.Date < today &&
+                        t.ScheduledTime.HasValue &&
+                        !t.IsAllDay)
+            .ToListAsync();
+
+        foreach (var task in yesterdayScheduledTasks)
+        {
+            task.TaskDate = today;
+            task.ScheduledTime = null;
+            task.IsAllDay = true;
+            task.QueueEntryDate ??= today;
+            task.DaysInQueue = 0; // Reset when moved to Tasks
+            task.UpdatedAt = DateTime.UtcNow;
+            transitionCount++;
+        }
+
+        // 2. Increment DaysInQueue for all incomplete all-day tasks
+        var allDayTasks = await context.DailyTasks
+            .Where(t => t.UserId == userId &&
+                        !t.IsCompleted &&
+                        t.IsAllDay &&
+                        t.TaskDate.Date <= today)
+            .ToListAsync();
+
+        foreach (var task in allDayTasks)
+        {
+            if (task.QueueEntryDate.HasValue)
+            {
+                task.DaysInQueue = (int)(today - task.QueueEntryDate.Value.Date).TotalDays;
+            }
+            else
+            {
+                task.QueueEntryDate = task.TaskDate;
+                task.DaysInQueue = (int)(today - task.TaskDate.Date).TotalDays;
+            }
+            task.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await context.SaveChangesAsync();
+        return transitionCount;
+    }
+
+    /// <summary>
+    /// Move a task from Waiting to Tasks for today
+    /// </summary>
+    public async Task<DailyTask?> MoveWaitingToTasksAsync(int taskId, int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var task = await context.DailyTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId);
+
+        if (task == null) return null;
+
+        task.TaskDate = DateTime.Today;
+        task.IsAllDay = true;
+        task.ScheduledTime = null;
+        task.QueueEntryDate = DateTime.Today;
+        task.DaysInQueue = 0;
+        task.UpdatedAt = DateTime.UtcNow;
+
+        await context.SaveChangesAsync();
+        return task;
+    }
+
+    /// <summary>
+    /// Get tasks that have been in the Tasks queue for 2+ days (candidates for Waiting)
+    /// </summary>
+    public async Task<List<DailyTask>> GetLongQueueTasksAsync(int userId, int daysThreshold = 2)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var userGroupIds = await GetUserGroupIdsAsync(context, userId);
+
+        return await context.DailyTasks
+            .Where(t => !t.IsCompleted &&
+                        t.IsAllDay &&
+                        t.DaysInQueue >= daysThreshold &&
+                        (t.UserId == userId || (t.GroupId != null && userGroupIds.Contains(t.GroupId.Value))))
+            .OrderByDescending(t => t.DaysInQueue)
+            .ThenBy(t => t.TaskDate)
+            .Include(t => t.Participants)
+                .ThenInclude(tp => tp.Participant)
+            .Include(t => t.Group)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Clean up incomplete recurring task instances.
+    /// For each recurring series with incomplete past instances:
+    /// - Keep only the oldest incomplete instance (consolidate overdue ones)
+    /// - Keep only the next future instance
+    /// - Delete other future instances that were pre-generated
+    /// </summary>
+    public async Task<int> CleanupIncompleteRecurringTasksAsync(int userId)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var today = DateTime.Today;
+        var deletedCount = 0;
+
+        // Find all parent tasks with recurrence
+        var recurringParentIds = await context.DailyTasks
+            .Where(t => t.UserId == userId &&
+                        t.RecurrenceType != RecurrenceType.None &&
+                        t.RecurrenceParentId == null)
+            .Select(t => t.Id)
+            .ToListAsync();
+
+        foreach (var parentId in recurringParentIds)
+        {
+            // Get all instances of this recurring task
+            var instances = await context.DailyTasks
+                .Where(t => t.RecurrenceParentId == parentId || t.Id == parentId)
+                .OrderBy(t => t.TaskDate)
+                .ToListAsync();
+
+            // Split into past incomplete, future, and completed
+            var pastIncomplete = instances.Where(t => t.TaskDate.Date < today && !t.IsCompleted).ToList();
+            var futureIncomplete = instances.Where(t => t.TaskDate.Date >= today && !t.IsCompleted)
+                .OrderBy(t => t.TaskDate).ToList();
+
+            // If there are multiple past incomplete instances, keep only the oldest
+            if (pastIncomplete.Count > 1)
+            {
+                var toDelete = pastIncomplete.Skip(1).ToList();
+                context.DailyTasks.RemoveRange(toDelete);
+                deletedCount += toDelete.Count;
+            }
+
+            // If there are multiple future incomplete instances, keep only the next one
+            if (futureIncomplete.Count > 1)
+            {
+                var toDelete = futureIncomplete.Skip(1).ToList();
+                context.DailyTasks.RemoveRange(toDelete);
+                deletedCount += toDelete.Count;
+            }
+        }
+
+        await context.SaveChangesAsync();
+        return deletedCount;
+    }
+
+    /// <summary>
+    /// Get the next occurrence date for a recurring task after completing an instance
+    /// </summary>
+    public DateTime? GetNextRecurrenceDate(DailyTask task, DateTime afterDate)
+    {
+        if (task.RecurrenceType == RecurrenceType.None) return null;
+
+        var nextDate = afterDate.AddDays(1);
+        var endDate = task.RecurrenceEndDate ?? afterDate.AddYears(1);
+
+        while (nextDate <= endDate)
+        {
+            bool isMatch = false;
+
+            switch (task.RecurrenceType)
+            {
+                case RecurrenceType.Daily:
+                    isMatch = true;
+                    break;
+
+                case RecurrenceType.Weekly:
+                    var dayOfWeek = nextDate.DayOfWeek.ToString().Substring(0, 3);
+                    isMatch = string.IsNullOrEmpty(task.RecurrenceDays) || task.RecurrenceDays.Contains(dayOfWeek);
+                    break;
+
+                case RecurrenceType.Monthly:
+                    isMatch = nextDate.Day == task.TaskDate.Day;
+                    break;
+
+                case RecurrenceType.Yearly:
+                    isMatch = nextDate.Month == task.TaskDate.Month && nextDate.Day == task.TaskDate.Day;
+                    break;
+            }
+
+            if (isMatch) return nextDate;
+            nextDate = nextDate.AddDays(1);
+        }
+
+        return null;
     }
 }

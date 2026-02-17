@@ -320,6 +320,76 @@ public class ApiService : ITaskService, IAuthService
         }
     }
 
+    // ==================== TASK WORKFLOW ====================
+
+    public async Task<int> ProcessDailyTaskTransitionsAsync(int userId)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_baseUrl}/api/tasks/{userId}/process-transitions", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<int>(JsonOptions);
+                return result;
+            }
+            return 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    public async Task<DailyTask?> MoveWaitingToTasksAsync(int taskId, int userId)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_baseUrl}/api/tasks/{taskId}/move-to-tasks/{userId}", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var task = await response.Content.ReadFromJsonAsync<TaskResponse>(JsonOptions);
+                return task != null ? MapTask(task) : null;
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<DailyTask>> GetLongQueueTasksAsync(int userId, int daysThreshold = 2)
+    {
+        try
+        {
+            var tasks = await _http.GetFromJsonAsync<List<TaskResponse>>(
+                $"{_baseUrl}/api/tasks/{userId}/long-queue?daysThreshold={daysThreshold}", JsonOptions);
+            return tasks?.Select(MapTask).ToList() ?? new List<DailyTask>();
+        }
+        catch
+        {
+            return new List<DailyTask>();
+        }
+    }
+
+    public async Task<int> CleanupIncompleteRecurringTasksAsync(int userId)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_baseUrl}/api/tasks/{userId}/cleanup-recurring", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<int>(JsonOptions);
+                return result;
+            }
+            return 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     // ==================== PARTICIPANTS ====================
 
     public async Task<List<Participant>> GetAllParticipantsAsync()

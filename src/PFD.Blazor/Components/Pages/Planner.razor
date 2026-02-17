@@ -941,23 +941,31 @@
                                 {
                                     var isTaskDragging = DraggingScheduledTaskId == task.Id;
                                     var isSelected = SelectedScheduleTaskId == task.Id;
-                                    <div class="slot-task @(task.IsCompleted ? "done" : "") @(isSelected ? "selected" : "") @(isTaskDragging ? "dragging" : "")"
-                                         draggable="@(!task.IsCompleted && !isPastSlot ? "true" : "false")"
+                                    var isContinuation = task.ScheduledTime.HasValue && task.ScheduledTime.Value < slot;
+                                    <div class="slot-task @(task.IsCompleted ? "done" : "") @(isSelected ? "selected" : "") @(isTaskDragging ? "dragging" : "") @(isContinuation ? "continuation" : "")"
+                                         draggable="@(!task.IsCompleted && !isPastSlot && !isContinuation ? "true" : "false")"
                                          @ondragstart="() => OnScheduledTaskDragStart(task)"
                                          @ondragend="OnScheduledTaskDragEnd"
                                          @onclick="() => SelectTaskFromSchedule(task)"
                                          @ondblclick="() => OpenAppointmentDetail(task)">
-                                        @if (!task.IsCompleted && !isPastSlot)
+                                        @if (!isContinuation)
                                         {
-                                            <span class="slot-drag-handle" title="Drag to reschedule">&#8597;</span>
+                                            @if (!task.IsCompleted && !isPastSlot)
+                                            {
+                                                <span class="slot-drag-handle" title="Drag to reschedule">&#8597;</span>
+                                            }
+                                            <span class="t-time">@FormatTime(task.ScheduledTime)</span>
+                                            <span class="t-title">@task.Title</span>
+                                            @if (task.RecurrenceType != RecurrenceType.None)
+                                            {
+                                                <span class="t-recurring">&#128257;</span>
+                                            }
+                                            <span class="t-src pfd">P</span>
                                         }
-                                        <span class="t-time">@FormatTime(task.ScheduledTime)</span>
-                                        <span class="t-title">@task.Title</span>
-                                        @if (task.RecurrenceType != RecurrenceType.None)
+                                        else
                                         {
-                                            <span class="t-recurring">&#128257;</span>
+                                            <span class="t-continuation">↓ @task.Title</span>
                                         }
-                                        <span class="t-src pfd">P</span>
                                     </div>
                                 }
                                 @foreach (var evt in eventsAtSlot)
@@ -2626,6 +2634,12 @@
         // Parse time and recurrence from task text (e.g., "teach 333 MW 3:00 pm till May 1")
         var parseResult = TaskTimeParser.ParseWithRecurrence(NewTaskText);
 
+        // If weekly recurrence with specific days, set task date to next occurrence of first day
+        if (parseResult.RecurrenceType == RecurrenceType.Weekly && parseResult.RecurrenceDays?.Count > 0)
+        {
+            taskDate = GetNextOccurrenceOfDay(LocalToday, parseResult.RecurrenceDays[0]);
+        }
+
         var task = new DailyTask
         {
             Title = parseResult.CleanedTitle,
@@ -4004,6 +4018,26 @@
         return start.AddDays(daysToAdd);
     }
 
+    private DateTime GetNextOccurrenceOfDay(DateTime start, string dayAbbrev)
+    {
+        // Convert day abbreviation (Mon, Tue, Wed, etc.) to DayOfWeek
+        var dayMap = new Dictionary<string, DayOfWeek>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Mon", DayOfWeek.Monday }, { "Tue", DayOfWeek.Tuesday }, { "Wed", DayOfWeek.Wednesday },
+            { "Thu", DayOfWeek.Thursday }, { "Fri", DayOfWeek.Friday }, { "Sat", DayOfWeek.Saturday },
+            { "Sun", DayOfWeek.Sunday }
+        };
+
+        if (dayMap.TryGetValue(dayAbbrev, out var dayOfWeek))
+        {
+            int daysToAdd = ((int)dayOfWeek - (int)start.DayOfWeek + 7) % 7;
+            if (daysToAdd == 0) daysToAdd = 0; // If today is that day, use today (different from GetNextWeekday)
+            return start.AddDays(daysToAdd);
+        }
+
+        return start; // Fallback to start date if day not recognized
+    }
+
     private class CalendarDay
     {
         public DateTime Date { get; set; }
@@ -4264,8 +4298,10 @@
         var slotEnd = slot.Add(TimeSpan.FromMinutes(SlotMinutes));
         return ScheduledTasks
             .Where(t => t.ScheduledTime.HasValue &&
-                        t.ScheduledTime.Value >= slot &&
-                        t.ScheduledTime.Value < slotEnd)
+                        // Task starts in this slot OR task spans into this slot (based on duration)
+                        ((t.ScheduledTime.Value >= slot && t.ScheduledTime.Value < slotEnd) ||
+                         (t.ScheduledTime.Value < slot &&
+                          t.ScheduledTime.Value.Add(TimeSpan.FromMinutes(t.DurationMinutes > 0 ? t.DurationMinutes : SlotMinutes)) > slot)))
             .OrderBy(t => t.ScheduledTime!.Value)
             .ToList();
     }

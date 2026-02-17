@@ -2026,6 +2026,21 @@
     transform: scale(0.95);
 }
 
+.slot-task.continuation {
+    background: var(--task-header-bg, #26a69a);
+    opacity: 0.7;
+    border-left: 3px solid white;
+    border-radius: 0 4px 4px 0;
+}
+
+.slot-task.continuation .t-continuation {
+    font-size: 10px;
+    opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .slot-task[draggable="true"] {
     cursor: grab;
 }

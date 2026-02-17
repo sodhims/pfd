@@ -68,7 +68,9 @@ public class PfdDbContext : DbContext
                 { "StartedAt", "DATETIME2 NULL" },
                 { "ActualStartTime", "DATETIME2 NULL" },
                 { "ActualEndTime", "DATETIME2 NULL" },
-                { "TotalMinutesWorked", "INT NOT NULL DEFAULT 0" }
+                { "TotalMinutesWorked", "INT NOT NULL DEFAULT 0" },
+                { "DaysInQueue", "INT NOT NULL DEFAULT 0" },
+                { "QueueEntryDate", "DATETIME2 NULL" }
             };
 
             foreach (var column in columnsToAdd)
@@ -433,7 +435,9 @@ public class PfdDbContext : DbContext
                 { "StartedAt", "TEXT NULL" },
                 { "ActualStartTime", "TEXT NULL" },
                 { "ActualEndTime", "TEXT NULL" },
-                { "TotalMinutesWorked", "INTEGER NOT NULL DEFAULT 0" }
+                { "TotalMinutesWorked", "INTEGER NOT NULL DEFAULT 0" },
+                { "DaysInQueue", "INTEGER NOT NULL DEFAULT 0" },
+                { "QueueEntryDate", "TEXT NULL" }
             };
 
             foreach (var column in columnsToAdd)

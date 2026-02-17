@@ -21,6 +21,12 @@ public interface ITaskService
     Task<List<DailyTask>> GetUnscheduledTasksAsync(int userId);
     Task<List<DailyTask>> SearchAllTasksAsync(int userId, int maxResults = 500);
 
+    // Task workflow transitions
+    Task<int> ProcessDailyTaskTransitionsAsync(int userId);
+    Task<DailyTask?> MoveWaitingToTasksAsync(int taskId, int userId);
+    Task<List<DailyTask>> GetLongQueueTasksAsync(int userId, int daysThreshold = 2);
+    Task<int> CleanupIncompleteRecurringTasksAsync(int userId);
+
     // Participant management
     Task<List<Participant>> GetAllParticipantsAsync();
     Task<List<Participant>> GetRecentParticipantsAsync(int limit = 10);
