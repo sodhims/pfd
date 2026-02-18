@@ -2942,17 +2942,39 @@
     {
         if (PendingNewTask == null) return;
 
+        // Check if this is an existing task (from waiting area magnifying glass) or a new task
+        var isExistingTask = PendingNewTask.Id > 0;
+
         switch (SelectedAction)
         {
             case SimilarTaskAction.CreateNew:
-                await CreateTaskDirectly(PendingNewTask, PendingNewTask.RecurrenceType != RecurrenceType.None);
+                if (isExistingTask)
+                {
+                    // This is from the waiting area - just close the modal, task already exists
+                    // User chose not to link it to any similar task
+                }
+                else
+                {
+                    // This is a brand new task being created
+                    await CreateTaskDirectly(PendingNewTask, PendingNewTask.RecurrenceType != RecurrenceType.None);
+                }
                 break;
 
             case SimilarTaskAction.AddAsSubtask:
                 if (SelectedSimilarTask != null)
                 {
-                    PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
-                    await TaskService.CreateTaskAsync(PendingNewTask);
+                    if (isExistingTask)
+                    {
+                        // Move existing waiting task to be a subtask of the selected task
+                        PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
+                        await TaskService.UpdateTaskAsync(PendingNewTask);
+                    }
+                    else
+                    {
+                        // Create new task as subtask
+                        PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
+                        await TaskService.CreateTaskAsync(PendingNewTask);
+                    }
                     NewTaskText = "";
                     NewTaskTimeText = "";
                     InvalidateTaskCache(SelectedDate);
@@ -2963,7 +2985,7 @@
             case SimilarTaskAction.ReplaceTask:
                 if (SelectedSimilarTask != null)
                 {
-                    // Update the existing task with new info
+                    // Update the selected task with info from pending task
                     SelectedSimilarTask.Title = PendingNewTask.Title;
                     SelectedSimilarTask.ScheduledTime = PendingNewTask.ScheduledTime;
                     SelectedSimilarTask.IsAllDay = PendingNewTask.IsAllDay;
@@ -2975,6 +2997,13 @@
                         SelectedSimilarTask.RecurrenceEndDate = PendingNewTask.RecurrenceEndDate;
                     }
                     await TaskService.UpdateTaskAsync(SelectedSimilarTask);
+
+                    // If this was an existing waiting task, delete it since we're replacing
+                    if (isExistingTask)
+                    {
+                        await TaskService.DeleteTaskAsync(PendingNewTask.Id, CurrentUserId);
+                    }
+
                     NewTaskText = "";
                     NewTaskTimeText = "";
                     InvalidateTaskCache(SelectedDate);
@@ -2983,20 +3012,28 @@
                 break;
 
             case SimilarTaskAction.MergeChecked:
-                // Merge checked tasks into the PendingNewTask (make them subtasks, then delete originals)
                 if (TasksToMerge.Any())
                 {
-                    // First create the pending task as the parent
-                    var createdTask = await TaskService.CreateTaskAsync(PendingNewTask);
+                    DailyTask parentTask;
+                    if (isExistingTask)
+                    {
+                        // Use the existing waiting task as the parent
+                        parentTask = PendingNewTask;
+                    }
+                    else
+                    {
+                        // Create the new task as the parent
+                        parentTask = await TaskService.CreateTaskAsync(PendingNewTask);
+                    }
 
-                    // Move each checked task to be a subtask of the new task
+                    // Move each checked task to be a subtask of the parent
                     foreach (var taskId in TasksToMerge)
                     {
                         var taskToMerge = SimilarTaskMatches.FirstOrDefault(t => t.Id == taskId);
                         if (taskToMerge != null)
                         {
-                            taskToMerge.ParentTaskId = createdTask.Id;
-                            taskToMerge.TaskDate = PendingNewTask.TaskDate;
+                            taskToMerge.ParentTaskId = parentTask.Id;
+                            taskToMerge.TaskDate = parentTask.TaskDate;
                             await TaskService.UpdateTaskAsync(taskToMerge);
                         }
                     }
