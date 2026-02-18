@@ -2119,37 +2119,71 @@
                     <span>Task Activity Log</span>
                     <button class="close-btn" @onclick="CloseAuditLogModal">&#10005;</button>
                 </div>
+                <div class="modal-tabs">
+                    <button class="@(!ShowVerificationResults ? "active" : "")" @onclick="() => ShowVerificationResults = false">Activity Log</button>
+                    <button class="@(ShowVerificationResults ? "active" : "")" @onclick="RunTaskVerification">Verify Tasks</button>
+                </div>
                 <div class="modal-body">
-                    @if (IsLoadingAuditLogs)
+                    @if (ShowVerificationResults)
                     {
-                        <p>Loading...</p>
-                    }
-                    else if (!RecentAuditLogs.Any())
-                    {
-                        <p>No activity recorded yet.</p>
+                        @if (IsVerifying)
+                        {
+                            <p>Verifying task integrity...</p>
+                        }
+                        else if (!VerificationResults.Any())
+                        {
+                            <p class="verify-success">&#10003; All tasks verified - no missing tasks found in the last 7 days.</p>
+                        }
+                        else
+                        {
+                            <div class="verification-results">
+                                @foreach (var result in VerificationResults)
+                                {
+                                    <div class="verification-item @GetVerificationClass(result.Status)">
+                                        <div class="verification-header">
+                                            <span class="verification-status">@result.Status</span>
+                                            <span class="verification-time">@result.AuditLog.Timestamp.ToLocalTime().ToString("M/d h:mm tt")</span>
+                                        </div>
+                                        <div class="verification-title">@(result.AuditLog.TaskTitle ?? "(no title)")</div>
+                                        <div class="verification-message">@result.Message</div>
+                                    </div>
+                                }
+                            </div>
+                        }
                     }
                     else
                     {
-                        <div class="audit-log-list">
-                            @foreach (var log in RecentAuditLogs)
-                            {
-                                <div class="audit-log-item @(log.Success ? "" : "failed")">
-                                    <div class="audit-log-header">
-                                        <span class="audit-action @GetAuditActionClass(log.Action)">@log.Action</span>
-                                        <span class="audit-time">@log.Timestamp.ToLocalTime().ToString("M/d h:mm tt")</span>
+                        @if (IsLoadingAuditLogs)
+                        {
+                            <p>Loading...</p>
+                        }
+                        else if (!RecentAuditLogs.Any())
+                        {
+                            <p>No activity recorded yet.</p>
+                        }
+                        else
+                        {
+                            <div class="audit-log-list">
+                                @foreach (var log in RecentAuditLogs)
+                                {
+                                    <div class="audit-log-item @(log.Success ? "" : "failed")">
+                                        <div class="audit-log-header">
+                                            <span class="audit-action @GetAuditActionClass(log.Action)">@log.Action</span>
+                                            <span class="audit-time">@log.Timestamp.ToLocalTime().ToString("M/d h:mm tt")</span>
+                                        </div>
+                                        <div class="audit-log-title">@(log.TaskTitle ?? "(no title)")</div>
+                                        @if (!string.IsNullOrEmpty(log.Details))
+                                        {
+                                            <div class="audit-log-details">@log.Details</div>
+                                        }
+                                        @if (!log.Success && !string.IsNullOrEmpty(log.ErrorMessage))
+                                        {
+                                            <div class="audit-log-error">Error: @log.ErrorMessage</div>
+                                        }
                                     </div>
-                                    <div class="audit-log-title">@(log.TaskTitle ?? "(no title)")</div>
-                                    @if (!string.IsNullOrEmpty(log.Details))
-                                    {
-                                        <div class="audit-log-details">@log.Details</div>
-                                    }
-                                    @if (!log.Success && !string.IsNullOrEmpty(log.ErrorMessage))
-                                    {
-                                        <div class="audit-log-error">Error: @log.ErrorMessage</div>
-                                    }
-                                </div>
-                            }
-                        </div>
+                                }
+                            </div>
+                        }
                     }
                 </div>
                 <div class="modal-footer">
@@ -2193,6 +2227,9 @@
     private bool ShowAuditLogModal { get; set; } = false;
     private List<TaskAuditLog> RecentAuditLogs { get; set; } = new();
     private bool IsLoadingAuditLogs { get; set; } = false;
+    private List<AuditVerificationResult> VerificationResults { get; set; } = new();
+    private bool IsVerifying { get; set; } = false;
+    private bool ShowVerificationResults { get; set; } = false;
 
     private List<DailyTask> Tasks { get; set; } = new();
     private List<DailyTask> WeeklyTasks { get; set; } = new();
@@ -2977,6 +3014,13 @@
                 details: hasRecurrence ? $"With recurrence: {task.RecurrenceType}" : null,
                 afterState: task);
 
+            // Verify the task was actually persisted
+            var verified = await AuditService.VerifyTaskCreatedAsync(CurrentUserId, task.Id, task.Title);
+            if (!verified)
+            {
+                Console.WriteLine($"WARNING: Task verification failed for ID {task.Id}");
+            }
+
             // Generate recurring instances if recurrence is set
             if (hasRecurrence)
             {
@@ -3298,6 +3342,8 @@
     {
         ShowAuditLogModal = false;
         RecentAuditLogs.Clear();
+        VerificationResults.Clear();
+        ShowVerificationResults = false;
     }
 
     private string GetAuditActionClass(string action) => action switch
@@ -3310,6 +3356,38 @@
         AuditActions.Merge => "action-merge",
         AuditActions.Replace => "action-replace",
         AuditActions.ModalCancel => "action-cancel",
+        _ => ""
+    };
+
+    private async Task RunTaskVerification()
+    {
+        ShowVerificationResults = true;
+        IsVerifying = true;
+        StateHasChanged();
+
+        try
+        {
+            var allResults = await AuditService.VerifyTaskIntegrityAsync(CurrentUserId, 7);
+            // Only show non-verified results (problems)
+            VerificationResults = allResults.Where(r => r.Status != VerificationStatus.Verified && r.Status != VerificationStatus.TaskDeleted).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error verifying tasks: {ex.Message}");
+            VerificationResults = new List<AuditVerificationResult>();
+        }
+
+        IsVerifying = false;
+        StateHasChanged();
+    }
+
+    private string GetVerificationClass(VerificationStatus status) => status switch
+    {
+        VerificationStatus.Verified => "status-verified",
+        VerificationStatus.TaskMissing => "status-missing",
+        VerificationStatus.TaskDeleted => "status-deleted",
+        VerificationStatus.NoCreateFound => "status-orphan",
+        VerificationStatus.Suspicious => "status-suspicious",
         _ => ""
     };
 

@@ -105,6 +105,113 @@ public class TaskAuditService : ITaskAuditService
         return attempts.Where(a => !string.IsNullOrEmpty(a.RawInput) && !createInputs.Contains(a.RawInput)).ToList();
     }
 
+    public async Task<List<AuditVerificationResult>> VerifyTaskIntegrityAsync(int userId, int daysToCheck = 7)
+    {
+        var results = new List<AuditVerificationResult>();
+        var since = DateTime.UtcNow.AddDays(-daysToCheck);
+
+        // Get all CREATE logs in the period
+        var createLogs = await _context.TaskAuditLogs
+            .Where(l => l.UserId == userId &&
+                       l.Action == AuditActions.Create &&
+                       l.Success &&
+                       l.TaskId.HasValue &&
+                       l.Timestamp >= since)
+            .OrderByDescending(l => l.Timestamp)
+            .ToListAsync();
+
+        // Get all DELETE logs to know which deletions were intentional
+        var deleteLogs = await _context.TaskAuditLogs
+            .Where(l => l.UserId == userId &&
+                       l.Action == AuditActions.Delete &&
+                       l.TaskId.HasValue &&
+                       l.Timestamp >= since)
+            .ToListAsync();
+
+        var deletedTaskIds = deleteLogs.Select(d => d.TaskId!.Value).ToHashSet();
+
+        // Get all current task IDs for this user
+        var existingTaskIds = (await _context.DailyTasks
+            .Where(t => t.UserId == userId)
+            .Select(t => t.Id)
+            .ToListAsync()).ToHashSet();
+
+        // Check each create log
+        foreach (var log in createLogs)
+        {
+            var taskId = log.TaskId!.Value;
+
+            if (existingTaskIds.Contains(taskId))
+            {
+                // Task exists - verified OK
+                results.Add(new AuditVerificationResult
+                {
+                    AuditLog = log,
+                    Status = VerificationStatus.Verified,
+                    Message = "Task exists in database"
+                });
+            }
+            else if (deletedTaskIds.Contains(taskId))
+            {
+                // Task was deleted intentionally
+                results.Add(new AuditVerificationResult
+                {
+                    AuditLog = log,
+                    Status = VerificationStatus.TaskDeleted,
+                    Message = "Task was deleted (intentional)"
+                });
+            }
+            else
+            {
+                // Task is MISSING - this is a problem!
+                results.Add(new AuditVerificationResult
+                {
+                    AuditLog = log,
+                    Status = VerificationStatus.TaskMissing,
+                    Message = $"ALERT: Task '{log.TaskTitle}' (ID: {taskId}) was created but does not exist!"
+                });
+            }
+        }
+
+        // Check for orphaned create attempts
+        var orphanedAttempts = await GetOrphanedCreateAttemptsAsync(userId);
+        foreach (var attempt in orphanedAttempts.Where(a => a.Timestamp >= since))
+        {
+            results.Add(new AuditVerificationResult
+            {
+                AuditLog = attempt,
+                Status = VerificationStatus.NoCreateFound,
+                Message = $"Create attempt for '{attempt.TaskTitle}' has no corresponding create record"
+            });
+        }
+
+        return results;
+    }
+
+    public async Task<bool> VerifyTaskCreatedAsync(int userId, int taskId, string taskTitle)
+    {
+        // Small delay to ensure DB transaction completed
+        await Task.Delay(100);
+
+        var exists = await _context.DailyTasks
+            .AnyAsync(t => t.Id == taskId && t.UserId == userId);
+
+        if (!exists)
+        {
+            // Log the verification failure
+            await LogAsync(
+                userId,
+                "VERIFY_FAILED",
+                taskId: taskId,
+                taskTitle: taskTitle,
+                source: "VerifyTaskCreated",
+                success: false,
+                errorMessage: $"Task {taskId} was supposedly created but does not exist in database!");
+        }
+
+        return exists;
+    }
+
     private string SerializeTaskState(DailyTask task)
     {
         // Serialize only relevant fields to avoid circular references
