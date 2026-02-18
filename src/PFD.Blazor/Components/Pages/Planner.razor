@@ -764,15 +764,15 @@
                     <div class="waiting-tab-section">
                         <div class="waiting-sort-bar">
                             <label>Sort:</label>
-                            <select @bind="WaitingSortMode" @bind:after="OnWaitingSortChanged">
-                                <option value="@WaitingSortStrategy.Manual">Manual</option>
-                                <option value="@WaitingSortStrategy.Oldest">Oldest First</option>
-                                <option value="@WaitingSortStrategy.Newest">Newest First</option>
-                                <option value="@WaitingSortStrategy.DueDate">Due Date</option>
-                                <option value="@WaitingSortStrategy.Priority">AI: Priority</option>
-                                <option value="@WaitingSortStrategy.QuickWins">AI: Quick Wins</option>
-                                <option value="@WaitingSortStrategy.Context">AI: Context</option>
-                                <option value="@WaitingSortStrategy.Staleness">AI: Staleness</option>
+                            <select value="@WaitingSortMode" @onchange="OnWaitingSortDropdownChanged">
+                                <option value="Manual">Manual</option>
+                                <option value="Oldest">Oldest First</option>
+                                <option value="Newest">Newest First</option>
+                                <option value="DueDate">Due Date</option>
+                                <option value="Priority">AI: Priority</option>
+                                <option value="QuickWins">AI: Quick Wins</option>
+                                <option value="Context">AI: Context</option>
+                                <option value="Staleness">AI: Staleness</option>
                             </select>
                             @if (IsSortingWaiting)
                             {
@@ -2860,9 +2860,13 @@
         }
     }
 
-    private async Task OnWaitingSortChanged()
+    private async Task OnWaitingSortDropdownChanged(ChangeEventArgs e)
     {
-        await SortWaitingTasks();
+        if (Enum.TryParse<WaitingSortStrategy>(e.Value?.ToString(), out var strategy))
+        {
+            WaitingSortMode = strategy;
+            await SortWaitingTasks();
+        }
     }
 
     private async Task SortWaitingTasks()
