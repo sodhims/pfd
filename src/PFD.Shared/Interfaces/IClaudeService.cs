@@ -39,6 +39,11 @@ public interface IClaudeService
     /// Returns task IDs of similar tasks with relevance scores
     /// </summary>
     Task<List<SimilarTaskMatch>> FindSimilarTasksAsync(string newTaskTitle, List<DailyTask> existingTasks);
+
+    /// <summary>
+    /// AI-powered sorting of waiting tasks based on different strategies
+    /// </summary>
+    Task<List<SortedTaskResult>> SortWaitingTasksAsync(List<DailyTask> tasks, WaitingSortStrategy strategy);
 }
 
 public class SimilarTaskMatch
@@ -46,4 +51,23 @@ public class SimilarTaskMatch
     public int TaskId { get; set; }
     public int RelevanceScore { get; set; } // 0-100
     public string Reason { get; set; } = "";
+}
+
+public class SortedTaskResult
+{
+    public int TaskId { get; set; }
+    public int Rank { get; set; }
+    public string Reason { get; set; } = "";
+}
+
+public enum WaitingSortStrategy
+{
+    Manual,        // No AI sorting, use default order
+    Oldest,        // Oldest first (by days in queue)
+    Newest,        // Newest first (by days in queue)
+    DueDate,       // By due date (earliest first)
+    Priority,      // AI: Urgency/importance based on task text
+    QuickWins,     // AI: Effort estimate - quick tasks first
+    Context,       // AI: Group similar tasks together
+    Staleness      // AI: Things that become irrelevant if delayed
 }

@@ -565,4 +565,174 @@ EXISTING TASKS:
         public int Score { get; set; }
         public string? Reason { get; set; }
     }
+
+    public async Task<List<SortedTaskResult>> SortWaitingTasksAsync(List<DailyTask> tasks, WaitingSortStrategy strategy)
+    {
+        var results = new List<SortedTaskResult>();
+
+        if (!tasks.Any())
+            return results;
+
+        // Handle non-AI sorting strategies locally
+        switch (strategy)
+        {
+            case WaitingSortStrategy.Manual:
+                return tasks.Select((t, i) => new SortedTaskResult { TaskId = t.Id, Rank = i, Reason = "" }).ToList();
+
+            case WaitingSortStrategy.Oldest:
+                return tasks.OrderByDescending(t => t.DaysInQueue).ThenBy(t => t.CreatedAt)
+                    .Select((t, i) => new SortedTaskResult
+                    {
+                        TaskId = t.Id,
+                        Rank = i,
+                        Reason = t.DaysInQueue > 0 ? $"{t.DaysInQueue}d waiting" : "New"
+                    }).ToList();
+
+            case WaitingSortStrategy.Newest:
+                return tasks.OrderBy(t => t.DaysInQueue).ThenByDescending(t => t.CreatedAt)
+                    .Select((t, i) => new SortedTaskResult
+                    {
+                        TaskId = t.Id,
+                        Rank = i,
+                        Reason = t.DaysInQueue > 0 ? $"{t.DaysInQueue}d waiting" : "New"
+                    }).ToList();
+
+            case WaitingSortStrategy.DueDate:
+                return tasks.OrderBy(t => t.DueBy ?? DateTime.MaxValue).ThenBy(t => t.CreatedAt)
+                    .Select((t, i) => new SortedTaskResult
+                    {
+                        TaskId = t.Id,
+                        Rank = i,
+                        Reason = t.DueBy.HasValue ? $"Due {t.DueBy.Value:M/d}" : "No due date"
+                    }).ToList();
+        }
+
+        // AI-based sorting strategies
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            // Fallback: return original order with generic reason
+            return tasks.Select((t, i) => new SortedTaskResult
+            {
+                TaskId = t.Id,
+                Rank = i,
+                Reason = "AI unavailable"
+            }).ToList();
+        }
+
+        var taskData = tasks.Select(t => new
+        {
+            id = t.Id,
+            title = t.Title,
+            days = t.DaysInQueue,
+            due = t.DueBy?.ToString("M/d")
+        }).ToList();
+
+        var strategyPrompt = strategy switch
+        {
+            WaitingSortStrategy.Priority => @"Sort by URGENCY and IMPORTANCE. Consider:
+- Explicit urgency words (urgent, ASAP, deadline, critical)
+- Meeting prep or time-sensitive activities
+- Dependencies (tasks that unblock other work)
+- Professional commitments vs personal tasks
+Put most urgent/important tasks first.",
+
+            WaitingSortStrategy.QuickWins => @"Sort by EFFORT ESTIMATE - quick wins first. Consider:
+- Simple tasks (emails, calls, quick reviews) rank higher
+- Complex tasks (projects, research, analysis) rank lower
+- Single-step vs multi-step activities
+- Tasks with clear scope vs ambiguous ones
+Put tasks you can knock out quickly first for momentum.",
+
+            WaitingSortStrategy.Context => @"GROUP BY CONTEXT - similar tasks together. Consider:
+- Communication tasks together (emails, calls, messages)
+- Coding/technical tasks together
+- Administrative tasks together
+- People-related tasks (same person/team together)
+Group related tasks so you can batch similar work.",
+
+            WaitingSortStrategy.Staleness => @"Sort by STALENESS RISK - tasks that expire or lose relevance first. Consider:
+- Time-sensitive opportunities
+- Tasks referencing dates/events
+- Follow-ups that become awkward if delayed
+- Tasks with external dependencies
+Put tasks that become irrelevant or harder over time first.",
+
+            _ => "Sort by general priority."
+        };
+
+        try
+        {
+            var systemPrompt = $@"You are a task prioritization assistant. Sort these waiting tasks based on the following criteria:
+
+{strategyPrompt}
+
+Respond with JSON only:
+{{
+  ""sorted"": [
+    {{""id"": <task_id>, ""rank"": <1-based rank>, ""reason"": ""<2-4 word reason>""}}
+  ]
+}}
+
+Include ALL tasks in your response. Reason should be very brief (e.g., ""Quick email"", ""Meeting prep"", ""Low urgency"").";
+
+            var userPrompt = $@"WAITING TASKS:
+{System.Text.Json.JsonSerializer.Serialize(taskData, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}";
+
+            var content = await CallClaudeAsync(systemPrompt, userPrompt);
+            if (!string.IsNullOrEmpty(content))
+            {
+                var jsonMatch = System.Text.RegularExpressions.Regex.Match(content, @"\{[\s\S]*\}");
+                if (jsonMatch.Success)
+                {
+                    var aiResponse = System.Text.Json.JsonSerializer.Deserialize<SortedTaskAiResponse>(
+                        jsonMatch.Value,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (aiResponse?.Sorted != null)
+                    {
+                        foreach (var item in aiResponse.Sorted.OrderBy(s => s.Rank))
+                        {
+                            results.Add(new SortedTaskResult
+                            {
+                                TaskId = item.Id,
+                                Rank = item.Rank,
+                                Reason = item.Reason ?? ""
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback on error
+        }
+
+        // If AI didn't return all tasks, add missing ones at the end
+        var returnedIds = results.Select(r => r.TaskId).ToHashSet();
+        var maxRank = results.Any() ? results.Max(r => r.Rank) : 0;
+        foreach (var task in tasks.Where(t => !returnedIds.Contains(t.Id)))
+        {
+            results.Add(new SortedTaskResult
+            {
+                TaskId = task.Id,
+                Rank = ++maxRank,
+                Reason = ""
+            });
+        }
+
+        return results.OrderBy(r => r.Rank).ToList();
+    }
+
+    private class SortedTaskAiResponse
+    {
+        public List<SortedTaskAiItem>? Sorted { get; set; }
+    }
+
+    private class SortedTaskAiItem
+    {
+        public int Id { get; set; }
+        public int Rank { get; set; }
+        public string? Reason { get; set; }
+    }
 }

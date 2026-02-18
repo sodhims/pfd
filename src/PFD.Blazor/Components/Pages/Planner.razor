@@ -762,10 +762,29 @@
                 @if (ActiveTaskSection == TaskSection.Waiting)
                 {
                     <div class="waiting-tab-section">
-                        @if (OverdueTasks.Any())
-                        {
-                            @foreach (var task in OverdueTasks)
+                        <div class="waiting-sort-bar">
+                            <label>Sort:</label>
+                            <select @bind="WaitingSortMode" @bind:after="OnWaitingSortChanged">
+                                <option value="@WaitingSortStrategy.Manual">Manual</option>
+                                <option value="@WaitingSortStrategy.Oldest">Oldest First</option>
+                                <option value="@WaitingSortStrategy.Newest">Newest First</option>
+                                <option value="@WaitingSortStrategy.DueDate">Due Date</option>
+                                <option value="@WaitingSortStrategy.Priority">AI: Priority</option>
+                                <option value="@WaitingSortStrategy.QuickWins">AI: Quick Wins</option>
+                                <option value="@WaitingSortStrategy.Context">AI: Context</option>
+                                <option value="@WaitingSortStrategy.Staleness">AI: Staleness</option>
+                            </select>
+                            @if (IsSortingWaiting)
                             {
+                                <span class="sort-loading">Sorting...</span>
+                            }
+                        </div>
+                        @if (SortedWaitingTasks.Any())
+                        {
+                            @foreach (var sortedItem in SortedWaitingTasks)
+                            {
+                                var task = OverdueTasks.FirstOrDefault(t => t.Id == sortedItem.TaskId);
+                                if (task == null) continue;
                                 <div class="task-row waiting @(DraggingTaskId == task.Id ? "dragging" : "") @(!task.IsCompleted ? "draggable-task" : "")"
                                      draggable="@(!task.IsCompleted ? "true" : "false")"
                                      @ondragstart="() => OnDragStart(task)"
@@ -774,6 +793,10 @@
                                      data-task-id="@task.Id">
                                     <span class="drag-handle" title="Drag to schedule">&#9776;</span>
                                     <span class="task-title">@task.Title</span>
+                                    @if (!string.IsNullOrEmpty(sortedItem.Reason) && WaitingSortMode != WaitingSortStrategy.Manual)
+                                    {
+                                        <span class="sort-reason" title="@sortedItem.Reason">@sortedItem.Reason</span>
+                                    }
                                     <span class="task-date waiting-date">@task.TaskDate.ToString("M/d")</span>
                                     @{
                                         var daysWaiting = task.DaysInQueue > 0 ? task.DaysInQueue : (DateTime.Today - task.TaskDate.Date).Days;
@@ -788,7 +811,7 @@
                                 </div>
                             }
                         }
-                        else
+                        else if (!OverdueTasks.Any())
                         {
                             <div class="no-tasks">No waiting tasks. You're all caught up!</div>
                         }
@@ -1059,8 +1082,12 @@
                         <div class="list-label">Similar existing tasks:</div>
                         @foreach (var task in SimilarTaskMatches)
                         {
-                            <div class="similar-task-item @(SelectedSimilarTask?.Id == task.Id ? "selected" : "")"
+                            <div class="similar-task-item @(SelectedSimilarTask?.Id == task.Id ? "selected" : "") @(TasksToMerge.Contains(task.Id) ? "checked" : "")"
                                  @onclick="() => SelectSimilarTask(task)">
+                                <input type="checkbox" class="merge-checkbox"
+                                       checked="@TasksToMerge.Contains(task.Id)"
+                                       @onclick:stopPropagation="true"
+                                       @onchange="() => ToggleMergeTask(task.Id)" />
                                 <span class="task-title">@task.Title</span>
                                 <span class="task-meta">
                                     @task.TaskDate.ToString("M/d")
@@ -1093,6 +1120,12 @@
                                    disabled="@(SelectedSimilarTask == null)"
                                    @onchange="() => SelectedAction = SimilarTaskAction.ReplaceTask" />
                             Replace selected task
+                        </label>
+                        <label class="action-option @(TasksToMerge.Count == 0 ? "disabled" : "")">
+                            <input type="radio" name="similarAction" checked="@(SelectedAction == SimilarTaskAction.MergeChecked)"
+                                   disabled="@(TasksToMerge.Count == 0)"
+                                   @onchange="() => SelectedAction = SimilarTaskAction.MergeChecked" />
+                            Merge checked (@TasksToMerge.Count) into this task
                         </label>
                     </div>
                 </div>
@@ -2147,8 +2180,14 @@
     private DailyTask? PendingNewTask { get; set; }
     private DailyTask? SelectedSimilarTask { get; set; }
     private SimilarTaskAction SelectedAction { get; set; } = SimilarTaskAction.CreateNew;
+    private HashSet<int> TasksToMerge { get; set; } = new();
 
-    private enum SimilarTaskAction { CreateNew, AddAsSubtask, ReplaceTask }
+    private enum SimilarTaskAction { CreateNew, AddAsSubtask, ReplaceTask, MergeChecked }
+
+    // Waiting tasks sorting
+    private WaitingSortStrategy WaitingSortMode { get; set; } = WaitingSortStrategy.Manual;
+    private List<SortedTaskResult> SortedWaitingTasks { get; set; } = new();
+    private bool IsSortingWaiting { get; set; } = false;
 
     // AI properties
     private bool ShowAiPanel { get; set; } = false;
@@ -2565,6 +2604,9 @@
             // The Waiting tab shows tasks that are past due and need attention
             OverdueTasks = await TaskService.GetOverdueTasksAsync(LocalToday, CurrentUserId);
 
+            // Initialize sorted waiting tasks with default order
+            await SortWaitingTasks();
+
             // Always load all unscheduled tasks - they show in the Tasks tab regardless of selected date
             AllUnscheduledTasks = await TaskService.GetUnscheduledTasksAsync(CurrentUserId);
 
@@ -2818,6 +2860,44 @@
         }
     }
 
+    private async Task OnWaitingSortChanged()
+    {
+        await SortWaitingTasks();
+    }
+
+    private async Task SortWaitingTasks()
+    {
+        if (!OverdueTasks.Any())
+        {
+            SortedWaitingTasks = new List<SortedTaskResult>();
+            return;
+        }
+
+        // Non-AI sorts are fast, no loading indicator needed
+        if (WaitingSortMode == WaitingSortStrategy.Manual ||
+            WaitingSortMode == WaitingSortStrategy.Oldest ||
+            WaitingSortMode == WaitingSortStrategy.Newest ||
+            WaitingSortMode == WaitingSortStrategy.DueDate)
+        {
+            SortedWaitingTasks = await ClaudeService.SortWaitingTasksAsync(OverdueTasks, WaitingSortMode);
+            return;
+        }
+
+        // AI sorts need loading indicator
+        IsSortingWaiting = true;
+        StateHasChanged();
+
+        try
+        {
+            SortedWaitingTasks = await ClaudeService.SortWaitingTasksAsync(OverdueTasks, WaitingSortMode);
+        }
+        finally
+        {
+            IsSortingWaiting = false;
+            StateHasChanged();
+        }
+    }
+
     private void SelectSimilarTask(DailyTask task)
     {
         SelectedSimilarTask = task;
@@ -2828,12 +2908,30 @@
         }
     }
 
+    private void ToggleMergeTask(int taskId)
+    {
+        if (TasksToMerge.Contains(taskId))
+        {
+            TasksToMerge.Remove(taskId);
+        }
+        else
+        {
+            TasksToMerge.Add(taskId);
+        }
+        // Auto-select merge action when checking tasks
+        if (TasksToMerge.Any() && SelectedAction != SimilarTaskAction.MergeChecked)
+        {
+            SelectedAction = SimilarTaskAction.MergeChecked;
+        }
+    }
+
     private void CloseSimilarTasksModal()
     {
         ShowSimilarTasksModal = false;
         PendingNewTask = null;
         SimilarTaskMatches.Clear();
         SelectedSimilarTask = null;
+        TasksToMerge.Clear();
     }
 
     private async Task ConfirmSimilarTaskAction()
@@ -2873,6 +2971,32 @@
                         SelectedSimilarTask.RecurrenceEndDate = PendingNewTask.RecurrenceEndDate;
                     }
                     await TaskService.UpdateTaskAsync(SelectedSimilarTask);
+                    NewTaskText = "";
+                    NewTaskTimeText = "";
+                    InvalidateTaskCache(SelectedDate);
+                    await LoadTasksAsync(forceRefresh: true);
+                }
+                break;
+
+            case SimilarTaskAction.MergeChecked:
+                // Merge checked tasks into the PendingNewTask (make them subtasks, then delete originals)
+                if (TasksToMerge.Any())
+                {
+                    // First create the pending task as the parent
+                    var createdTask = await TaskService.CreateTaskAsync(PendingNewTask);
+
+                    // Move each checked task to be a subtask of the new task
+                    foreach (var taskId in TasksToMerge)
+                    {
+                        var taskToMerge = SimilarTaskMatches.FirstOrDefault(t => t.Id == taskId);
+                        if (taskToMerge != null)
+                        {
+                            taskToMerge.ParentTaskId = createdTask.Id;
+                            taskToMerge.TaskDate = PendingNewTask.TaskDate;
+                            await TaskService.UpdateTaskAsync(taskToMerge);
+                        }
+                    }
+
                     NewTaskText = "";
                     NewTaskTimeText = "";
                     InvalidateTaskCache(SelectedDate);

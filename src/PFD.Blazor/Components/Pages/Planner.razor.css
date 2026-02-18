@@ -2705,6 +2705,56 @@
     margin-left: 4px;
 }
 
+/* Waiting sort controls */
+.waiting-sort-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.waiting-sort-bar label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.waiting-sort-bar select {
+    padding: 4px 8px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    background: white;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.waiting-sort-bar select:focus {
+    outline: none;
+    border-color: var(--button-bg);
+}
+
+.sort-loading {
+    font-size: 11px;
+    color: #1976D2;
+    font-style: italic;
+}
+
+.sort-reason {
+    font-size: 10px;
+    color: #666;
+    background: rgba(25, 118, 210, 0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+    white-space: nowrap;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .waiting-time {
     color: #7B1FA2;
     font-size: 12px;
@@ -3464,6 +3514,19 @@
     padding: 2px 6px;
     border-radius: 10px;
     font-size: 10px;
+}
+
+.similar-task-item .merge-checkbox {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.similar-task-item.checked {
+    background: #E8F5E9;
+    border-color: #4CAF50;
 }
 
 .action-options {
