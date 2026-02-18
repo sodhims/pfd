@@ -283,10 +283,26 @@
 
         <!-- Add Task -->
         <div class="add-task @(SelectedDate.Date < LocalToday ? "past-date" : "")">
-            <input type="text" @bind="NewTaskText" @bind:event="oninput"
+            <input type="text" value="@NewTaskText"
+                   @oninput="OnTaskTextInput"
                    @onkeydown="HandleKeyDown" placeholder="@(SelectedDate.Date < LocalToday ? "Viewing past date - tasks will be added to today" : "Enter a new task...")" />
             <input type="text" @bind="NewTaskTimeText" @bind:event="oninput" class="time-input"
                    placeholder="9:00" pattern="[0-9]{1,2}:[0-9]{2}" title="Time (e.g. 9:00, 14:30)" />
+            @if (CurrentTimeEstimate != null || IsEstimating)
+            {
+                <span class="time-estimate @(IsEstimating ? "estimating" : "")">
+                    @if (IsEstimating)
+                    {
+                        <span class="estimate-loading">...</span>
+                    }
+                    else if (CurrentTimeEstimate != null)
+                    {
+                        <span class="estimate-value" title="@CurrentTimeEstimate.Reason (@CurrentTimeEstimate.ConfidencePercent% confidence)">
+                            ~@FormatEstimate(CurrentTimeEstimate.EstimatedMinutes)
+                        </span>
+                    }
+                </span>
+            }
             <button @onclick="AddTask">Add</button>
             <div class="template-dropdown">
                 <button class="template-btn" @onclick="ToggleTemplateDropdown" title="Use template">&#128203;</button>
@@ -2118,6 +2134,9 @@
     private string CurrentTheme { get; set; } = "teal";
     private string NewTaskText { get; set; } = "";
     private string NewTaskTimeText { get; set; } = "";
+    private TimeEstimate? CurrentTimeEstimate { get; set; }
+    private bool IsEstimating { get; set; } = false;
+    private System.Threading.CancellationTokenSource? _estimateDebounce;
     private List<DailyTask> Tasks { get; set; } = new();
     private List<DailyTask> WeeklyTasks { get; set; } = new();
     private List<DailyTask> OverdueTasks { get; set; } = new();
@@ -2761,6 +2780,59 @@
         }
     }
 
+    private async Task OnTaskTextInput(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString() ?? "";
+        NewTaskText = text; // Update bound property
+
+        // Cancel any pending estimation
+        _estimateDebounce?.Cancel();
+
+        if (string.IsNullOrWhiteSpace(text) || text.Length < 3)
+        {
+            CurrentTimeEstimate = null;
+            return;
+        }
+
+        // Debounce: wait 500ms after typing stops before estimating
+        _estimateDebounce = new System.Threading.CancellationTokenSource();
+        var token = _estimateDebounce.Token;
+
+        try
+        {
+            await Task.Delay(500, token);
+            if (token.IsCancellationRequested) return;
+
+            IsEstimating = true;
+            StateHasChanged();
+
+            // Get completed tasks for history-based estimation
+            var completedTasks = await TaskService.GetRecentTasksAsync(CurrentUserId, 90);
+            CurrentTimeEstimate = await ClaudeService.EstimateTaskDurationAsync(text, completedTasks);
+
+            IsEstimating = false;
+            StateHasChanged();
+        }
+        catch (TaskCanceledException)
+        {
+            // Debounced away - ignore
+        }
+        catch
+        {
+            IsEstimating = false;
+            CurrentTimeEstimate = null;
+        }
+    }
+
+    private string FormatEstimate(int minutes)
+    {
+        if (minutes < 60)
+            return $"{minutes}m";
+        var hours = minutes / 60;
+        var mins = minutes % 60;
+        return mins > 0 ? $"{hours}h{mins}m" : $"{hours}h";
+    }
+
     private async Task AddTask()
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
@@ -2788,7 +2860,9 @@
             RecurrenceType = parseResult.RecurrenceType,
             RecurrenceInterval = 1,
             RecurrenceDays = parseResult.RecurrenceDays != null ? string.Join(",", parseResult.RecurrenceDays) : null,
-            RecurrenceEndDate = parseResult.RecurrenceEndDate
+            RecurrenceEndDate = parseResult.RecurrenceEndDate,
+            DueBy = parseResult.DueDate,
+            DurationMinutes = CurrentTimeEstimate?.EstimatedMinutes ?? 30
         };
 
         // Priority 1: Use manually entered time from time input field
@@ -2832,6 +2906,7 @@
 
         NewTaskText = "";
         NewTaskTimeText = "";
+        CurrentTimeEstimate = null;
         InvalidateTaskCache(SelectedDate);
         await LoadTasksAsync(forceRefresh: true);
     }
@@ -2929,8 +3004,15 @@
         }
     }
 
-    private void CloseSimilarTasksModal()
+    private async Task CloseSimilarTasksModal()
     {
+        // SAFETY: If there's a pending NEW task (Id == 0), create it before closing
+        // This ensures tasks are NEVER dropped when user cancels the modal
+        if (PendingNewTask != null && PendingNewTask.Id == 0)
+        {
+            await CreateTaskDirectly(PendingNewTask, PendingNewTask.RecurrenceType != RecurrenceType.None);
+        }
+
         ShowSimilarTasksModal = false;
         PendingNewTask = null;
         SimilarTaskMatches.Clear();
@@ -3046,7 +3128,9 @@
                 break;
         }
 
-        CloseSimilarTasksModal();
+        // Task was handled, clear it before closing to prevent duplicate creation
+        PendingNewTask = null;
+        await CloseSimilarTasksModal();
     }
 
     private async Task ToggleStarted(DailyTask task)

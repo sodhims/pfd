@@ -14,7 +14,8 @@ public static class TaskTimeParser
         TimeSpan? ScheduledTime,
         RecurrenceType RecurrenceType = RecurrenceType.None,
         List<string>? RecurrenceDays = null,
-        DateTime? RecurrenceEndDate = null);
+        DateTime? RecurrenceEndDate = null,
+        DateTime? DueDate = null);
 
     // Named times
     private static readonly Dictionary<string, TimeSpan> NamedTimes = new(StringComparer.OrdinalIgnoreCase)
@@ -168,6 +169,11 @@ public static class TaskTimeParser
         @"\b(?:every\s*day|daily)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Pattern for due date: "by Feb 21", "by February 21", "by 2/21", "due Feb 21", "due by Feb 21"
+    private static readonly Regex DueDateRegex = new(
+        @"\b(?:due\s+)?by\s+(\w+\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Parse a task description and extract time and recurrence information.
     /// Examples:
@@ -185,8 +191,18 @@ public static class TaskTimeParser
         RecurrenceType recurrenceType = RecurrenceType.None;
         List<string>? recurrenceDays = null;
         DateTime? endDate = null;
+        DateTime? dueDate = null;
 
-        // 1. Check for end date first (before removing other parts)
+        // 1. Check for due date first ("by Feb 21", "due by March 1")
+        var dueDateMatch = DueDateRegex.Match(cleanedText);
+        if (dueDateMatch.Success)
+        {
+            dueDate = ParseEndDate(dueDateMatch.Groups[1].Value);
+            cleanedText = cleanedText.Remove(dueDateMatch.Index, dueDateMatch.Length);
+            cleanedText = CleanUpText(cleanedText);
+        }
+
+        // 2. Check for recurrence end date (before removing other parts)
         var endDateMatch = EndDateRegex.Match(cleanedText);
         if (endDateMatch.Success)
         {
@@ -195,7 +211,7 @@ public static class TaskTimeParser
             cleanedText = CleanUpText(cleanedText);
         }
 
-        // 2. Check for daily pattern
+        // 3. Check for daily pattern
         var dailyMatch = DailyPatternRegex.Match(cleanedText);
         if (dailyMatch.Success)
         {
@@ -204,7 +220,7 @@ public static class TaskTimeParser
             cleanedText = CleanUpText(cleanedText);
         }
 
-        // 3. Check for weekly day patterns (MW, MWF, TTh, etc.)
+        // 4. Check for weekly day patterns (MW, MWF, TTh, etc.)
         if (recurrenceType == RecurrenceType.None)
         {
             var dayMatch = DayPatternRegex.Match(cleanedText);
@@ -221,12 +237,12 @@ public static class TaskTimeParser
             }
         }
 
-        // 4. Parse time from the remaining text
+        // 5. Parse time from the remaining text
         var timeResult = Parse(cleanedText);
         scheduledTime = timeResult.ScheduledTime;
         cleanedText = timeResult.CleanedTitle;
 
-        return new ParseResult(cleanedText, scheduledTime, recurrenceType, recurrenceDays, endDate);
+        return new ParseResult(cleanedText, scheduledTime, recurrenceType, recurrenceDays, endDate, dueDate);
     }
 
     /// <summary>

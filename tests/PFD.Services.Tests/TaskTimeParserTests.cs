@@ -109,4 +109,45 @@ public class TaskTimeParserTests
         Assert.That(result.RecurrenceType, Is.EqualTo(expectedRecurrence));
         Assert.That(result.RecurrenceDays, Contains.Item(expectedDay));
     }
+
+    // ==================== DUE DATE PARSING TESTS ====================
+
+    [Test]
+    [TestCase("Prepare Week 5 by Feb 21", "Prepare Week 5", 2, 21)]
+    [TestCase("Submit report by March 15", "Submit report", 3, 15)]
+    [TestCase("Finish homework by 2/28", "Finish homework", 2, 28)]
+    [TestCase("Review docs due by April 1", "Review docs", 4, 1)]
+    public void ParseWithRecurrence_ExtractsDueDate(string input, string expectedTitle, int expectedMonth, int expectedDay)
+    {
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo(expectedTitle), $"Title mismatch for: {input}");
+        Assert.That(result.DueDate, Is.Not.Null, $"Due date should be parsed from: {input}");
+        Assert.That(result.DueDate!.Value.Month, Is.EqualTo(expectedMonth), $"Month mismatch for: {input}");
+        Assert.That(result.DueDate!.Value.Day, Is.EqualTo(expectedDay), $"Day mismatch for: {input}");
+    }
+
+    [Test]
+    public void ParseWithRecurrence_DueDateAndTime_BothParsed()
+    {
+        var input = "Submit report by Feb 21 at 3pm";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo("Submit report"));
+        Assert.That(result.DueDate, Is.Not.Null);
+        Assert.That(result.DueDate!.Value.Month, Is.EqualTo(2));
+        Assert.That(result.DueDate!.Value.Day, Is.EqualTo(21));
+        Assert.That(result.ScheduledTime, Is.Not.Null);
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(15));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_NoDueDate_ReturnsNull()
+    {
+        var input = "Regular task without deadline";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.DueDate, Is.Null);
+        Assert.That(result.CleanedTitle, Is.EqualTo(input));
+    }
 }

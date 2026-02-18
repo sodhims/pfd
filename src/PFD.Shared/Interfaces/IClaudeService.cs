@@ -44,6 +44,27 @@ public interface IClaudeService
     /// AI-powered sorting of waiting tasks based on different strategies
     /// </summary>
     Task<List<SortedTaskResult>> SortWaitingTasksAsync(List<DailyTask> tasks, WaitingSortStrategy strategy);
+
+    /// <summary>
+    /// Estimate task duration based on similar completed tasks and AI analysis
+    /// Returns estimated minutes and confidence level
+    /// </summary>
+    Task<TimeEstimate> EstimateTaskDurationAsync(string taskTitle, List<DailyTask> completedTasks);
+}
+
+public class TimeEstimate
+{
+    public int EstimatedMinutes { get; set; } = 30;
+    public int ConfidencePercent { get; set; } = 50; // 0-100
+    public string Reason { get; set; } = "";
+    public List<HistoricalMatch> SimilarTasks { get; set; } = new();
+}
+
+public class HistoricalMatch
+{
+    public string Title { get; set; } = "";
+    public int ActualMinutes { get; set; }
+    public DateTime CompletedDate { get; set; }
 }
 
 public class SimilarTaskMatch

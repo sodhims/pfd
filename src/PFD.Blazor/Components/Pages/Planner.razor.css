@@ -2383,6 +2383,41 @@
     font-style: italic;
 }
 
+/* Time Estimate Display */
+.time-estimate {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    background: #E3F2FD;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #1565C0;
+    white-space: nowrap;
+}
+
+.time-estimate.estimating {
+    background: #F5F5F5;
+    color: #9E9E9E;
+}
+
+.time-estimate .estimate-loading {
+    animation: estimate-pulse 1s infinite;
+}
+
+.time-estimate .estimate-value {
+    cursor: help;
+    font-weight: 500;
+}
+
+.time-estimate .estimate-value:hover {
+    text-decoration: underline dotted;
+}
+
+@keyframes estimate-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
 /* Task List */
 .task-list {
     flex: 1;

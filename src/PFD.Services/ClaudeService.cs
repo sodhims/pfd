@@ -735,4 +735,166 @@ Include ALL tasks in your response. Reason should be very brief (e.g., ""Quick e
         public int Rank { get; set; }
         public string? Reason { get; set; }
     }
+
+    public async Task<TimeEstimate> EstimateTaskDurationAsync(string taskTitle, List<DailyTask> completedTasks)
+    {
+        var result = new TimeEstimate();
+
+        if (string.IsNullOrWhiteSpace(taskTitle))
+            return result;
+
+        // Step 1: Find similar completed tasks with actual duration data
+        var searchTerms = taskTitle.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2)
+            .ToList();
+
+        var similarCompleted = completedTasks
+            .Where(t => t.IsCompleted && (t.TotalMinutesWorked > 0 || t.DurationMinutes > 0))
+            .Where(t =>
+            {
+                var title = t.Title.ToLower();
+                return searchTerms.Any(term => title.Contains(term)) ||
+                       title.Contains(taskTitle.ToLower().Trim());
+            })
+            .OrderByDescending(t => t.CompletedAt ?? t.UpdatedAt)
+            .Take(5)
+            .ToList();
+
+        // Build historical matches
+        foreach (var task in similarCompleted)
+        {
+            var actualMinutes = task.TotalMinutesWorked > 0 ? task.TotalMinutesWorked : task.DurationMinutes;
+            result.SimilarTasks.Add(new HistoricalMatch
+            {
+                Title = task.Title,
+                ActualMinutes = actualMinutes,
+                CompletedDate = task.CompletedAt ?? task.UpdatedAt
+            });
+        }
+
+        // Step 2: Calculate estimate from history if we have data
+        if (similarCompleted.Any())
+        {
+            var durations = similarCompleted
+                .Select(t => t.TotalMinutesWorked > 0 ? t.TotalMinutesWorked : t.DurationMinutes)
+                .ToList();
+
+            // Use median for more robust estimate
+            durations.Sort();
+            var median = durations[durations.Count / 2];
+
+            result.EstimatedMinutes = RoundToNiceNumber(median);
+            result.ConfidencePercent = Math.Min(90, 50 + (similarCompleted.Count * 10));
+            result.Reason = $"Based on {similarCompleted.Count} similar completed task(s)";
+
+            return result;
+        }
+
+        // Step 3: Fall back to AI estimation if no history
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            // No API key, use heuristics
+            result.EstimatedMinutes = EstimateFromHeuristics(taskTitle);
+            result.ConfidencePercent = 30;
+            result.Reason = "Estimated from task type";
+            return result;
+        }
+
+        try
+        {
+            var systemPrompt = @"You are a task duration estimator. Given a task description, estimate how long it will take in minutes.
+
+Consider:
+- Meetings typically: 30-60 min
+- Quick emails/calls: 5-15 min
+- Research/analysis: 30-120 min
+- Writing documents: 30-90 min
+- Code reviews: 15-45 min
+- Simple admin tasks: 5-15 min
+
+Respond with JSON only:
+{
+  ""minutes"": <estimated minutes>,
+  ""confidence"": <0-100 confidence percent>,
+  ""reason"": ""<brief 3-5 word explanation>""
+}";
+
+            var content = await CallClaudeAsync(systemPrompt, $"Task: \"{taskTitle}\"");
+            if (!string.IsNullOrEmpty(content))
+            {
+                var jsonMatch = System.Text.RegularExpressions.Regex.Match(content, @"\{[\s\S]*\}");
+                if (jsonMatch.Success)
+                {
+                    var aiResponse = System.Text.Json.JsonSerializer.Deserialize<TimeEstimateAiResponse>(
+                        jsonMatch.Value,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (aiResponse != null)
+                    {
+                        result.EstimatedMinutes = RoundToNiceNumber(aiResponse.Minutes);
+                        result.ConfidencePercent = Math.Clamp(aiResponse.Confidence, 20, 70); // AI estimates capped
+                        result.Reason = aiResponse.Reason ?? "AI estimate";
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to heuristics on error
+            result.EstimatedMinutes = EstimateFromHeuristics(taskTitle);
+            result.ConfidencePercent = 30;
+            result.Reason = "Estimated from task type";
+        }
+
+        return result;
+    }
+
+    private int EstimateFromHeuristics(string taskTitle)
+    {
+        var lower = taskTitle.ToLower();
+
+        // Meeting keywords
+        if (lower.Contains("meeting") || lower.Contains("standup") || lower.Contains("sync") ||
+            lower.Contains("call") || lower.Contains("interview"))
+            return 30;
+
+        // Quick tasks
+        if (lower.Contains("email") || lower.Contains("reply") || lower.Contains("respond") ||
+            lower.Contains("quick") || lower.Contains("check"))
+            return 15;
+
+        // Research/analysis
+        if (lower.Contains("research") || lower.Contains("analyze") || lower.Contains("review") ||
+            lower.Contains("investigate") || lower.Contains("study"))
+            return 60;
+
+        // Writing tasks
+        if (lower.Contains("write") || lower.Contains("draft") || lower.Contains("document") ||
+            lower.Contains("report") || lower.Contains("prepare"))
+            return 45;
+
+        // Default
+        return 30;
+    }
+
+    private int RoundToNiceNumber(int minutes)
+    {
+        // Round to nice increments: 5, 10, 15, 20, 30, 45, 60, 90, 120
+        if (minutes <= 7) return 5;
+        if (minutes <= 12) return 10;
+        if (minutes <= 17) return 15;
+        if (minutes <= 25) return 20;
+        if (minutes <= 37) return 30;
+        if (minutes <= 52) return 45;
+        if (minutes <= 75) return 60;
+        if (minutes <= 105) return 90;
+        return ((minutes + 15) / 30) * 30; // Round to nearest 30 for longer
+    }
+
+    private class TimeEstimateAiResponse
+    {
+        public int Minutes { get; set; }
+        public int Confidence { get; set; }
+        public string? Reason { get; set; }
+    }
 }
