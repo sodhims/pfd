@@ -18,6 +18,7 @@ public class PfdDbContext : DbContext
     public DbSet<TaskTemplate> TaskTemplates { get; set; } = null!;
     public DbSet<SubtaskTemplate> SubtaskTemplates { get; set; } = null!;
     public DbSet<VoiceClip> VoiceClips { get; set; } = null!;
+    public DbSet<TaskAuditLog> TaskAuditLogs { get; set; } = null!;
 
     private bool IsSqlServer => Database.ProviderName?.Contains("SqlServer") == true;
 
@@ -377,6 +378,40 @@ public class PfdDbContext : DbContext
             {
                 Console.WriteLine($"Warning: Could not create voice_clips table: {ex.Message}");
             }
+
+            // Create task_audit_logs table if it doesn't exist
+            try
+            {
+                using var createAuditLogsCmd = connection.CreateCommand();
+                createAuditLogsCmd.CommandText = @"
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'task_audit_logs')
+                    BEGIN
+                        CREATE TABLE task_audit_logs (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            UserId INT NOT NULL,
+                            TaskId INT NULL,
+                            Action NVARCHAR(50) NOT NULL,
+                            TaskTitle NVARCHAR(500) NULL,
+                            Details NVARCHAR(2000) NULL,
+                            RawInput NVARCHAR(1000) NULL,
+                            Source NVARCHAR(100) NULL,
+                            Success BIT NOT NULL DEFAULT 1,
+                            ErrorMessage NVARCHAR(1000) NULL,
+                            BeforeStateJson NVARCHAR(MAX) NULL,
+                            AfterStateJson NVARCHAR(MAX) NULL,
+                            Timestamp DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                        );
+                        CREATE INDEX IX_task_audit_logs_user ON task_audit_logs(UserId);
+                        CREATE INDEX IX_task_audit_logs_task ON task_audit_logs(TaskId);
+                        CREATE INDEX IX_task_audit_logs_timestamp ON task_audit_logs(Timestamp);
+                        CREATE INDEX IX_task_audit_logs_action ON task_audit_logs(Action);
+                    END";
+                createAuditLogsCmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not create task_audit_logs table: {ex.Message}");
+            }
         }
         finally
         {
@@ -734,6 +769,47 @@ public class PfdDbContext : DbContext
                 createVoiceClipsStatusIndexCmd.CommandText = "CREATE INDEX IX_voice_clips_status ON voice_clips(Status)";
                 createVoiceClipsStatusIndexCmd.ExecuteNonQuery();
             }
+
+            // Create task_audit_logs table if it doesn't exist
+            try
+            {
+                using var checkAuditLogsCmd = connection.CreateCommand();
+                checkAuditLogsCmd.CommandText = "SELECT Id FROM task_audit_logs LIMIT 1";
+                checkAuditLogsCmd.ExecuteScalar();
+            }
+            catch
+            {
+                using var createAuditLogsCmd = connection.CreateCommand();
+                createAuditLogsCmd.CommandText = @"
+                    CREATE TABLE task_audit_logs (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        UserId INTEGER NOT NULL,
+                        TaskId INTEGER NULL,
+                        Action TEXT NOT NULL,
+                        TaskTitle TEXT NULL,
+                        Details TEXT NULL,
+                        RawInput TEXT NULL,
+                        Source TEXT NULL,
+                        Success INTEGER NOT NULL DEFAULT 1,
+                        ErrorMessage TEXT NULL,
+                        BeforeStateJson TEXT NULL,
+                        AfterStateJson TEXT NULL,
+                        Timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+                    )";
+                createAuditLogsCmd.ExecuteNonQuery();
+
+                using var createAuditLogsUserIndexCmd = connection.CreateCommand();
+                createAuditLogsUserIndexCmd.CommandText = "CREATE INDEX IX_task_audit_logs_user ON task_audit_logs(UserId)";
+                createAuditLogsUserIndexCmd.ExecuteNonQuery();
+
+                using var createAuditLogsTaskIndexCmd = connection.CreateCommand();
+                createAuditLogsTaskIndexCmd.CommandText = "CREATE INDEX IX_task_audit_logs_task ON task_audit_logs(TaskId)";
+                createAuditLogsTaskIndexCmd.ExecuteNonQuery();
+
+                using var createAuditLogsTimestampIndexCmd = connection.CreateCommand();
+                createAuditLogsTimestampIndexCmd.CommandText = "CREATE INDEX IX_task_audit_logs_timestamp ON task_audit_logs(Timestamp)";
+                createAuditLogsTimestampIndexCmd.ExecuteNonQuery();
+            }
         }
         finally
         {
@@ -953,6 +1029,19 @@ public class PfdDbContext : DbContext
             entity.HasIndex(e => e.Status);
 
             entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql(defaultDateSql);
+        });
+
+        // TaskAuditLog configuration
+        modelBuilder.Entity<TaskAuditLog>(entity =>
+        {
+            entity.ToTable("task_audit_logs");
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.TaskId);
+            entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => e.Action);
+
+            entity.Property(e => e.Timestamp)
                 .HasDefaultValueSql(defaultDateSql);
         });
     }

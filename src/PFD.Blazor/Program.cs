@@ -103,6 +103,9 @@ else
 // Voice Clip Service - for saving and managing voice recordings
 builder.Services.AddScoped<IVoiceClipService, VoiceClipService>();
 
+// Task Audit Service - for tracking all task operations
+builder.Services.AddScoped<ITaskAuditService, TaskAuditService>();
+
 // External Calendar Services - configure with your credentials
 var googleClientId = builder.Configuration["Google:ClientId"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
 var googleClientSecret = builder.Configuration["Google:ClientSecret"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");

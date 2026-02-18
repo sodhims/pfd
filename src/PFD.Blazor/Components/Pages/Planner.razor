@@ -19,6 +19,7 @@
 @inject IInsightHistoryService InsightHistoryService
 @inject ITaskTemplateService TaskTemplateService
 @inject IClaudeService ClaudeService
+@inject ITaskAuditService AuditService
 @rendermode InteractiveServer
 
 <PageTitle>PFD - Personal Daily Planner</PageTitle>
@@ -308,6 +309,7 @@
                 <button class="template-btn" @onclick="ToggleTemplateDropdown" title="Use template">&#128203;</button>
                 <button class="search-btn" @onclick="ToggleSearchPanel" title="AI Search">&#128269;</button>
                 <button class="voice-btn" @onclick="OpenVoiceModal" title="Record voice task">&#127908;</button>
+                <button class="audit-btn" @onclick="OpenAuditLogModal" title="Task Activity Log">&#128220;</button>
                 @if (ShowTemplateDropdown)
                 {
                     <div class="template-menu">
@@ -2107,6 +2109,55 @@
             </div>
         </div>
     }
+
+    @* Audit Log Modal *@
+    @if (ShowAuditLogModal)
+    {
+        <div class="modal-overlay" @onclick="CloseAuditLogModal">
+            <div class="audit-log-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <span>Task Activity Log</span>
+                    <button class="close-btn" @onclick="CloseAuditLogModal">&#10005;</button>
+                </div>
+                <div class="modal-body">
+                    @if (IsLoadingAuditLogs)
+                    {
+                        <p>Loading...</p>
+                    }
+                    else if (!RecentAuditLogs.Any())
+                    {
+                        <p>No activity recorded yet.</p>
+                    }
+                    else
+                    {
+                        <div class="audit-log-list">
+                            @foreach (var log in RecentAuditLogs)
+                            {
+                                <div class="audit-log-item @(log.Success ? "" : "failed")">
+                                    <div class="audit-log-header">
+                                        <span class="audit-action @GetAuditActionClass(log.Action)">@log.Action</span>
+                                        <span class="audit-time">@log.Timestamp.ToLocalTime().ToString("M/d h:mm tt")</span>
+                                    </div>
+                                    <div class="audit-log-title">@(log.TaskTitle ?? "(no title)")</div>
+                                    @if (!string.IsNullOrEmpty(log.Details))
+                                    {
+                                        <div class="audit-log-details">@log.Details</div>
+                                    }
+                                    @if (!log.Success && !string.IsNullOrEmpty(log.ErrorMessage))
+                                    {
+                                        <div class="audit-log-error">Error: @log.ErrorMessage</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" @onclick="CloseAuditLogModal">Close</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -2137,6 +2188,12 @@
     private TimeEstimate? CurrentTimeEstimate { get; set; }
     private bool IsEstimating { get; set; } = false;
     private System.Threading.CancellationTokenSource? _estimateDebounce;
+
+    // Audit log state
+    private bool ShowAuditLogModal { get; set; } = false;
+    private List<TaskAuditLog> RecentAuditLogs { get; set; } = new();
+    private bool IsLoadingAuditLogs { get; set; } = false;
+
     private List<DailyTask> Tasks { get; set; } = new();
     private List<DailyTask> WeeklyTasks { get; set; } = new();
     private List<DailyTask> OverdueTasks { get; set; } = new();
@@ -2837,6 +2894,15 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
+        // Log the create attempt immediately to ensure we never lose track
+        await AuditService.LogAsync(
+            CurrentUserId,
+            AuditActions.CreateAttempt,
+            taskTitle: NewTaskText,
+            rawInput: NewTaskText,
+            source: "AddTask",
+            details: $"Time input: {NewTaskTimeText}");
+
         // Don't allow adding tasks to past days - use today instead
         var taskDate = SelectedDate.Date < LocalToday ? LocalToday : SelectedDate;
 
@@ -2896,19 +2962,46 @@
 
     private async Task CreateTaskDirectly(DailyTask task, bool hasRecurrence)
     {
-        await TaskService.CreateTaskAsync(task);
-
-        // Generate recurring instances if recurrence is set
-        if (hasRecurrence)
+        try
         {
-            await GenerateRecurringInstances(task);
-        }
+            await TaskService.CreateTaskAsync(task);
 
-        NewTaskText = "";
-        NewTaskTimeText = "";
-        CurrentTimeEstimate = null;
-        InvalidateTaskCache(SelectedDate);
-        await LoadTasksAsync(forceRefresh: true);
+            // Log successful creation
+            await AuditService.LogAsync(
+                CurrentUserId,
+                AuditActions.Create,
+                taskId: task.Id,
+                taskTitle: task.Title,
+                rawInput: NewTaskText,
+                source: "CreateTaskDirectly",
+                details: hasRecurrence ? $"With recurrence: {task.RecurrenceType}" : null,
+                afterState: task);
+
+            // Generate recurring instances if recurrence is set
+            if (hasRecurrence)
+            {
+                await GenerateRecurringInstances(task);
+            }
+
+            NewTaskText = "";
+            NewTaskTimeText = "";
+            CurrentTimeEstimate = null;
+            InvalidateTaskCache(SelectedDate);
+            await LoadTasksAsync(forceRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            // Log failure
+            await AuditService.LogAsync(
+                CurrentUserId,
+                AuditActions.Create,
+                taskTitle: task.Title,
+                rawInput: NewTaskText,
+                source: "CreateTaskDirectly",
+                success: false,
+                errorMessage: ex.Message);
+            throw;
+        }
     }
 
     // Similar task modal handlers
@@ -3010,6 +3103,14 @@
         // This ensures tasks are NEVER dropped when user cancels the modal
         if (PendingNewTask != null && PendingNewTask.Id == 0)
         {
+            // Log modal cancel with auto-create
+            await AuditService.LogAsync(
+                CurrentUserId,
+                AuditActions.ModalCancel,
+                taskTitle: PendingNewTask.Title,
+                source: "SimilarTasksModal",
+                details: "Auto-creating task on modal cancel to prevent data loss");
+
             await CreateTaskDirectly(PendingNewTask, PendingNewTask.RecurrenceType != RecurrenceType.None);
         }
 
@@ -3050,12 +3151,21 @@
                         // Move existing waiting task to be a subtask of the selected task
                         PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
                         await TaskService.UpdateTaskAsync(PendingNewTask);
+                        await AuditService.LogAsync(CurrentUserId, AuditActions.AddSubtask,
+                            taskId: PendingNewTask.Id, taskTitle: PendingNewTask.Title,
+                            source: "SimilarTasksModal",
+                            details: $"Added as subtask to '{SelectedSimilarTask.Title}' (ID: {SelectedSimilarTask.Id})");
                     }
                     else
                     {
                         // Create new task as subtask
                         PendingNewTask.ParentTaskId = SelectedSimilarTask.Id;
                         await TaskService.CreateTaskAsync(PendingNewTask);
+                        await AuditService.LogAsync(CurrentUserId, AuditActions.Create,
+                            taskId: PendingNewTask.Id, taskTitle: PendingNewTask.Title,
+                            source: "SimilarTasksModal",
+                            details: $"Created as subtask of '{SelectedSimilarTask.Title}' (ID: {SelectedSimilarTask.Id})",
+                            afterState: PendingNewTask);
                     }
                     NewTaskText = "";
                     NewTaskTimeText = "";
@@ -3067,6 +3177,7 @@
             case SimilarTaskAction.ReplaceTask:
                 if (SelectedSimilarTask != null)
                 {
+                    var oldTitle = SelectedSimilarTask.Title;
                     // Update the selected task with info from pending task
                     SelectedSimilarTask.Title = PendingNewTask.Title;
                     SelectedSimilarTask.ScheduledTime = PendingNewTask.ScheduledTime;
@@ -3080,10 +3191,20 @@
                     }
                     await TaskService.UpdateTaskAsync(SelectedSimilarTask);
 
+                    await AuditService.LogAsync(CurrentUserId, AuditActions.Replace,
+                        taskId: SelectedSimilarTask.Id, taskTitle: SelectedSimilarTask.Title,
+                        source: "SimilarTasksModal",
+                        details: $"Replaced '{oldTitle}' with '{PendingNewTask.Title}'",
+                        afterState: SelectedSimilarTask);
+
                     // If this was an existing waiting task, delete it since we're replacing
                     if (isExistingTask)
                     {
                         await TaskService.DeleteTaskAsync(PendingNewTask.Id, CurrentUserId);
+                        await AuditService.LogAsync(CurrentUserId, AuditActions.Delete,
+                            taskId: PendingNewTask.Id, taskTitle: PendingNewTask.Title,
+                            source: "SimilarTasksModal",
+                            details: "Deleted original task after replace action");
                     }
 
                     NewTaskText = "";
@@ -3106,9 +3227,15 @@
                     {
                         // Create the new task as the parent
                         parentTask = await TaskService.CreateTaskAsync(PendingNewTask);
+                        await AuditService.LogAsync(CurrentUserId, AuditActions.Create,
+                            taskId: parentTask.Id, taskTitle: parentTask.Title,
+                            source: "SimilarTasksModal-Merge",
+                            details: "Created as merge parent",
+                            afterState: parentTask);
                     }
 
                     // Move each checked task to be a subtask of the parent
+                    var mergedTitles = new List<string>();
                     foreach (var taskId in TasksToMerge)
                     {
                         var taskToMerge = SimilarTaskMatches.FirstOrDefault(t => t.Id == taskId);
@@ -3117,8 +3244,14 @@
                             taskToMerge.ParentTaskId = parentTask.Id;
                             taskToMerge.TaskDate = parentTask.TaskDate;
                             await TaskService.UpdateTaskAsync(taskToMerge);
+                            mergedTitles.Add(taskToMerge.Title);
                         }
                     }
+
+                    await AuditService.LogAsync(CurrentUserId, AuditActions.Merge,
+                        taskId: parentTask.Id, taskTitle: parentTask.Title,
+                        source: "SimilarTasksModal",
+                        details: $"Merged {TasksToMerge.Count} tasks: {string.Join(", ", mergedTitles)}");
 
                     NewTaskText = "";
                     NewTaskTimeText = "";
@@ -3139,6 +3272,46 @@
         InvalidateTaskCache(task.TaskDate);
         await LoadTasksAsync(forceRefresh: true);
     }
+
+    // Audit log methods
+    private async Task OpenAuditLogModal()
+    {
+        ShowAuditLogModal = true;
+        IsLoadingAuditLogs = true;
+        StateHasChanged();
+
+        try
+        {
+            RecentAuditLogs = await AuditService.GetRecentLogsAsync(CurrentUserId, 50);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading audit logs: {ex.Message}");
+            RecentAuditLogs = new List<TaskAuditLog>();
+        }
+
+        IsLoadingAuditLogs = false;
+        StateHasChanged();
+    }
+
+    private void CloseAuditLogModal()
+    {
+        ShowAuditLogModal = false;
+        RecentAuditLogs.Clear();
+    }
+
+    private string GetAuditActionClass(string action) => action switch
+    {
+        AuditActions.Create => "action-create",
+        AuditActions.CreateAttempt => "action-attempt",
+        AuditActions.Update => "action-update",
+        AuditActions.Delete => "action-delete",
+        AuditActions.Complete => "action-complete",
+        AuditActions.Merge => "action-merge",
+        AuditActions.Replace => "action-replace",
+        AuditActions.ModalCancel => "action-cancel",
+        _ => ""
+    };
 
     private async Task ToggleTask(DailyTask task)
     {

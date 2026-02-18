@@ -89,7 +89,12 @@
       "Bash(powershell -Command \"Compress-Archive -Path ''./publish/*'' -DestinationPath ''./deploy.zip'' -Force\")",
       "Bash(del \"r:\\\\PFD\\\\src\\\\PFD.Blazor\\\\publish\\\\wwwroot\\\\Components\\\\Layout\\\\ReconnectModal.razor.js\")",
       "Bash(del \"r:\\\\PFD\\\\src\\\\PFD.Blazor\\\\wwwroot\\\\Components\\\\Layout\\\\ReconnectModal.razor.js\")",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(gh run list:*)",
+      "Bash(zip:*)",
+      "Bash(az webapp deploy:*)",
+      "Bash(where az:*)",
+      "Bash(cmd.exe /c \"where az\")"
     ]
   }
 }
