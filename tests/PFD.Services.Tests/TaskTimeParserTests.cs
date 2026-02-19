@@ -150,4 +150,34 @@ public class TaskTimeParserTests
         Assert.That(result.DueDate, Is.Null);
         Assert.That(result.CleanedTitle, Is.EqualTo(input));
     }
+
+    // ==================== NAMED TIME PARSING TESTS ====================
+
+    [Test]
+    [TestCase("meet andrew at noon", "meet andrew", 12, 0)]
+    [TestCase("meet andrew at noon tomorrow", "meet andrew tomorrow", 12, 0)]
+    [TestCase("call at midnight", "call", 0, 0)]
+    [TestCase("breakfast meeting at morning", "breakfast meeting", 9, 0)]
+    [TestCase("dinner at evening", "dinner", 18, 0)]
+    [TestCase("standup at lunchtime", "standup", 12, 0)]
+    public void Parse_NamedTimes_ExtractsCorrectTime(string input, string expectedTitle, int expectedHour, int expectedMinute)
+    {
+        var result = TaskTimeParser.Parse(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo(expectedTitle), $"Title mismatch for: {input}");
+        Assert.That(result.ScheduledTime, Is.Not.Null, $"Time should be parsed from: {input}");
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(expectedHour), $"Hour mismatch for: {input}");
+        Assert.That(result.ScheduledTime!.Value.Minutes, Is.EqualTo(expectedMinute), $"Minute mismatch for: {input}");
+    }
+
+    [Test]
+    public void ParseWithRecurrence_AtNoonTomorrow_ExtractsTime()
+    {
+        var input = "meet andrew at noon tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.ScheduledTime, Is.Not.Null, "Time should be parsed");
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(12), "Should be noon = 12:00");
+        Assert.That(result.ScheduledTime!.Value.Minutes, Is.EqualTo(0));
+    }
 }
