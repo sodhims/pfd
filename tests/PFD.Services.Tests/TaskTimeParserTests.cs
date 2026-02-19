@@ -280,4 +280,99 @@ public class TaskTimeParserTests
         Assert.That(result.TaskDate, Is.Null, "TaskDate should be null when no relative date");
         Assert.That(result.CleanedTitle, Is.EqualTo(input));
     }
+
+    // ==================== TITLE CLEANUP VERIFICATION TESTS ====================
+    // These tests verify that relative date words are REMOVED from the title
+
+    [Test]
+    [TestCase("meet josh tomorrow", "meet josh")]
+    [TestCase("meet andrew tomorrow", "meet andrew")]
+    [TestCase("meet andrew at noon tomorrow", "meet andrew")]
+    [TestCase("call mom today", "call mom")]
+    [TestCase("dentist day after tomorrow", "dentist")]
+    [TestCase("meeting next week", "meeting")]
+    [TestCase("review next month", "review")]
+    [TestCase("submit report on Monday", "submit report")]
+    [TestCase("meeting this Friday", "meeting")]
+    [TestCase("call tonight", "call")]
+    public void ParseWithRecurrence_RelativeDateRemoved_TitleClean(string input, string expectedTitle)
+    {
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo(expectedTitle),
+            $"Title should not contain relative date. Input: '{input}', Got: '{result.CleanedTitle}'");
+        Assert.That(result.CleanedTitle, Does.Not.Contain("tomorrow").IgnoreCase);
+        Assert.That(result.CleanedTitle, Does.Not.Contain("today").IgnoreCase);
+        Assert.That(result.CleanedTitle, Does.Not.Contain("tonight").IgnoreCase);
+    }
+
+    [Test]
+    [TestCase("meet josh tomorrow at 11am", "meet josh", 11, 0)]
+    [TestCase("meet andrew at noon tomorrow", "meet andrew", 12, 0)]
+    [TestCase("doctor today at 3pm", "doctor", 15, 0)]
+    [TestCase("call client tomorrow at 9:30 am", "call client", 9, 30)]
+    public void ParseWithRecurrence_RelativeDateWithTime_BothParsedTitleClean(
+        string input, string expectedTitle, int expectedHour, int expectedMinute)
+    {
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo(expectedTitle),
+            $"Title should be clean. Input: '{input}'");
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.ScheduledTime, Is.Not.Null, "ScheduledTime should be parsed");
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(expectedHour));
+        Assert.That(result.ScheduledTime!.Value.Minutes, Is.EqualTo(expectedMinute));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_MeetJoshTomorrow_ScheduledForTomorrow()
+    {
+        // This is the exact failing scenario from the user's screenshot
+        var input = "meet josh tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo("meet josh"),
+            "Title should NOT contain 'tomorrow'");
+        Assert.That(result.TaskDate, Is.Not.Null,
+            "TaskDate should be parsed for 'tomorrow'");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)),
+            "Task should be scheduled for TOMORROW, not today");
+    }
+
+    [Test]
+    public void ParseWithRecurrence_MeetAndrewTomorrow_ScheduledForTomorrow()
+    {
+        // This is another exact failing scenario from the user's screenshot
+        var input = "meet andrew tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.CleanedTitle, Is.EqualTo("meet andrew"),
+            "Title should NOT contain 'tomorrow'");
+        Assert.That(result.TaskDate, Is.Not.Null,
+            "TaskDate should be parsed for 'tomorrow'");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)),
+            "Task should be scheduled for TOMORROW, not today");
+    }
+
+    [Test]
+    public void ParseWithRecurrence_MeetAndrewAtNoonTomorrow_FullParse()
+    {
+        // Complete verification of the problematic input
+        var input = "meet andrew at noon tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        // Title should be clean
+        Assert.That(result.CleanedTitle, Is.EqualTo("meet andrew"),
+            "Title should be 'meet andrew' without 'at noon' or 'tomorrow'");
+
+        // Time should be noon
+        Assert.That(result.ScheduledTime, Is.Not.Null, "Time should be parsed");
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(12), "Should be noon (12:00)");
+        Assert.That(result.ScheduledTime!.Value.Minutes, Is.EqualTo(0));
+
+        // Date should be tomorrow
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)),
+            $"Task should be scheduled for tomorrow ({DateTime.Today.AddDays(1):yyyy-MM-dd}), not today ({DateTime.Today:yyyy-MM-dd})");
+    }
 }
