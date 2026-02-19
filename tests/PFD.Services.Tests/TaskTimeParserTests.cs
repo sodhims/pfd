@@ -171,7 +171,7 @@ public class TaskTimeParserTests
     }
 
     [Test]
-    public void ParseWithRecurrence_AtNoonTomorrow_ExtractsTime()
+    public void ParseWithRecurrence_AtNoonTomorrow_ExtractsTimeAndDate()
     {
         var input = "meet andrew at noon tomorrow";
         var result = TaskTimeParser.ParseWithRecurrence(input);
@@ -179,5 +179,105 @@ public class TaskTimeParserTests
         Assert.That(result.ScheduledTime, Is.Not.Null, "Time should be parsed");
         Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(12), "Should be noon = 12:00");
         Assert.That(result.ScheduledTime!.Value.Minutes, Is.EqualTo(0));
+        Assert.That(result.TaskDate, Is.Not.Null, "Date should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)), "Should be tomorrow");
+        Assert.That(result.CleanedTitle, Is.EqualTo("meet andrew"), "Title should not include 'tomorrow'");
+    }
+
+    // ==================== RELATIVE DATE PARSING TESTS ====================
+
+    [Test]
+    public void ParseWithRecurrence_Tomorrow_ParsesDate()
+    {
+        var input = "buy groceries tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)));
+        Assert.That(result.CleanedTitle, Is.EqualTo("buy groceries"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_Today_ParsesDate()
+    {
+        var input = "call mom today";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today));
+        Assert.That(result.CleanedTitle, Is.EqualTo("call mom"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_DayAfterTomorrow_ParsesDate()
+    {
+        var input = "dentist appointment day after tomorrow";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(2)));
+        Assert.That(result.CleanedTitle, Is.EqualTo("dentist appointment"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_NextWeek_ParsesDate()
+    {
+        var input = "team meeting next week";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(7)));
+        Assert.That(result.CleanedTitle, Is.EqualTo("team meeting"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_NextMonth_ParsesDate()
+    {
+        var input = "review project next month";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddMonths(1)));
+        Assert.That(result.CleanedTitle, Is.EqualTo("review project"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_OnMonday_ParsesDate()
+    {
+        var input = "submit report on Monday";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        // Should be the upcoming Monday
+        var expectedDate = DateTime.Today;
+        while (expectedDate.DayOfWeek != DayOfWeek.Monday)
+            expectedDate = expectedDate.AddDays(1);
+        if (expectedDate == DateTime.Today)
+            expectedDate = expectedDate.AddDays(7); // If today is Monday, should be next Monday
+        Assert.That(result.TaskDate!.Value.DayOfWeek, Is.EqualTo(DayOfWeek.Monday));
+        Assert.That(result.CleanedTitle, Is.EqualTo("submit report"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_TomorrowWithTime_ParsesBoth()
+    {
+        var input = "doctor appointment tomorrow at 3pm";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Not.Null, "TaskDate should be parsed");
+        Assert.That(result.TaskDate!.Value.Date, Is.EqualTo(DateTime.Today.AddDays(1)));
+        Assert.That(result.ScheduledTime, Is.Not.Null, "Time should be parsed");
+        Assert.That(result.ScheduledTime!.Value.Hours, Is.EqualTo(15));
+        Assert.That(result.CleanedTitle, Is.EqualTo("doctor appointment"));
+    }
+
+    [Test]
+    public void ParseWithRecurrence_NoRelativeDate_ReturnsNullTaskDate()
+    {
+        var input = "regular task without date";
+        var result = TaskTimeParser.ParseWithRecurrence(input);
+
+        Assert.That(result.TaskDate, Is.Null, "TaskDate should be null when no relative date");
+        Assert.That(result.CleanedTitle, Is.EqualTo(input));
     }
 }

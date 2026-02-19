@@ -15,7 +15,8 @@ public static class TaskTimeParser
         RecurrenceType RecurrenceType = RecurrenceType.None,
         List<string>? RecurrenceDays = null,
         DateTime? RecurrenceEndDate = null,
-        DateTime? DueDate = null);
+        DateTime? DueDate = null,
+        DateTime? TaskDate = null);  // Parsed date like "tomorrow", "next Monday"
 
     // Named times
     private static readonly Dictionary<string, TimeSpan> NamedTimes = new(StringComparer.OrdinalIgnoreCase)
@@ -174,6 +175,11 @@ public static class TaskTimeParser
         @"\b(?:due\s+)?by\s+(\w+\s+\d{1,2}(?:,?\s+\d{4})?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Pattern for relative dates: "tomorrow", "today", "next Monday", "on Tuesday", "this Friday", "day after tomorrow", "next week", "next month"
+    private static readonly Regex RelativeDateRegex = new(
+        @"\b(day\s+after\s+tomorrow|tomorrow|today|tonight|next\s+week|next\s+month|next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:on|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Parse a task description and extract time and recurrence information.
     /// Examples:
@@ -192,6 +198,7 @@ public static class TaskTimeParser
         List<string>? recurrenceDays = null;
         DateTime? endDate = null;
         DateTime? dueDate = null;
+        DateTime? taskDate = null;
 
         // 1. Check for due date first ("by Feb 21", "due by March 1")
         var dueDateMatch = DueDateRegex.Match(cleanedText);
@@ -202,7 +209,16 @@ public static class TaskTimeParser
             cleanedText = CleanUpText(cleanedText);
         }
 
-        // 2. Check for recurrence end date (before removing other parts)
+        // 2. Check for relative dates ("tomorrow", "next Monday", "on Tuesday")
+        var relativeDateMatch = RelativeDateRegex.Match(cleanedText);
+        if (relativeDateMatch.Success)
+        {
+            taskDate = ParseRelativeDate(relativeDateMatch.Value);
+            cleanedText = cleanedText.Remove(relativeDateMatch.Index, relativeDateMatch.Length);
+            cleanedText = CleanUpText(cleanedText);
+        }
+
+        // 3. Check for recurrence end date (before removing other parts)
         var endDateMatch = EndDateRegex.Match(cleanedText);
         if (endDateMatch.Success)
         {
@@ -211,7 +227,7 @@ public static class TaskTimeParser
             cleanedText = CleanUpText(cleanedText);
         }
 
-        // 3. Check for daily pattern
+        // 4. Check for daily pattern
         var dailyMatch = DailyPatternRegex.Match(cleanedText);
         if (dailyMatch.Success)
         {
@@ -220,8 +236,8 @@ public static class TaskTimeParser
             cleanedText = CleanUpText(cleanedText);
         }
 
-        // 4. Check for weekly day patterns (MW, MWF, TTh, etc.)
-        if (recurrenceType == RecurrenceType.None)
+        // 5. Check for weekly day patterns (MW, MWF, TTh, etc.) - only if no relative date already parsed
+        if (recurrenceType == RecurrenceType.None && taskDate == null)
         {
             var dayMatch = DayPatternRegex.Match(cleanedText);
             if (dayMatch.Success)
@@ -237,12 +253,85 @@ public static class TaskTimeParser
             }
         }
 
-        // 5. Parse time from the remaining text
+        // 6. Parse time from the remaining text
         var timeResult = Parse(cleanedText);
         scheduledTime = timeResult.ScheduledTime;
         cleanedText = timeResult.CleanedTitle;
 
-        return new ParseResult(cleanedText, scheduledTime, recurrenceType, recurrenceDays, endDate, dueDate);
+        return new ParseResult(cleanedText, scheduledTime, recurrenceType, recurrenceDays, endDate, dueDate, taskDate);
+    }
+
+    /// <summary>
+    /// Parse relative date expressions like "tomorrow", "next Monday", "on Tuesday", "day after tomorrow", "next week", "next month"
+    /// </summary>
+    private static DateTime? ParseRelativeDate(string dateStr)
+    {
+        var today = DateTime.Today;
+        var lower = dateStr.ToLowerInvariant().Trim();
+
+        if (lower == "today")
+            return today;
+
+        if (lower == "tomorrow")
+            return today.AddDays(1);
+
+        if (lower == "tonight")
+            return today; // Tonight is still today
+
+        if (lower == "day after tomorrow")
+            return today.AddDays(2);
+
+        if (lower == "next week")
+            return today.AddDays(7); // 7 days from now
+
+        if (lower == "next month")
+            return today.AddMonths(1); // Same day next month
+
+        // "next Monday", "next Tuesday", etc.
+        var nextDayMatch = Regex.Match(lower, @"next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)");
+        if (nextDayMatch.Success)
+        {
+            var targetDay = ParseDayOfWeek(nextDayMatch.Groups[1].Value);
+            if (targetDay.HasValue)
+            {
+                // "next Monday" means the Monday of NEXT week (skip this week's)
+                var daysUntil = ((int)targetDay.Value - (int)today.DayOfWeek + 7) % 7;
+                if (daysUntil == 0) daysUntil = 7; // If today is that day, go to next week
+                daysUntil += 7; // Always go to next week for "next X"
+                return today.AddDays(daysUntil - 7); // Subtract 7 to get the first occurrence, then add 7 for "next"
+            }
+        }
+
+        // "on Monday", "this Tuesday", etc.
+        var thisDayMatch = Regex.Match(lower, @"(?:on|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)");
+        if (thisDayMatch.Success)
+        {
+            var targetDay = ParseDayOfWeek(thisDayMatch.Groups[1].Value);
+            if (targetDay.HasValue)
+            {
+                // "on Monday" or "this Monday" means the upcoming Monday (could be today or this week)
+                var daysUntil = ((int)targetDay.Value - (int)today.DayOfWeek + 7) % 7;
+                if (daysUntil == 0) daysUntil = 7; // If today is that day, assume next week
+                return today.AddDays(daysUntil);
+            }
+        }
+
+        return null;
+    }
+
+    private static DayOfWeek? ParseDayOfWeek(string dayName)
+    {
+        return dayName.ToLowerInvariant() switch
+        {
+            "sunday" => DayOfWeek.Sunday,
+            "monday" => DayOfWeek.Monday,
+            "tuesday" => DayOfWeek.Tuesday,
+            "wednesday" => DayOfWeek.Wednesday,
+            "thursday" => DayOfWeek.Thursday,
+            "friday" => DayOfWeek.Friday,
+            "saturday" => DayOfWeek.Saturday,
+            _ => null
+        };
     }
 
     /// <summary>

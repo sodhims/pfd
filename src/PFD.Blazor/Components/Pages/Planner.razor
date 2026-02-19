@@ -2931,23 +2931,40 @@
     {
         if (string.IsNullOrWhiteSpace(NewTaskText) || CurrentUserId == 0) return;
 
-        // Don't allow adding tasks to past days - use today instead
-        var taskDate = SelectedDate.Date < LocalToday ? LocalToday : SelectedDate;
-
         // Parse time and recurrence from task text (e.g., "teach 333 MW 3:00 pm till May 1")
         var parseResult = TaskTimeParser.ParseWithRecurrence(NewTaskText);
+
+        // Determine task date: parsed date > selected date > today (if past)
+        DateTime taskDate;
+        if (parseResult.TaskDate.HasValue)
+        {
+            // Use explicitly parsed date like "tomorrow", "next Monday"
+            taskDate = parseResult.TaskDate.Value;
+        }
+        else if (SelectedDate.Date < LocalToday)
+        {
+            // Don't allow adding tasks to past days - use today instead
+            taskDate = LocalToday;
+        }
+        else
+        {
+            taskDate = SelectedDate;
+        }
 
         // Log the create attempt immediately with parsed info to ensure we never lose track
         var parsedTimeInfo = parseResult.ScheduledTime.HasValue
             ? $"Parsed time: {parseResult.ScheduledTime.Value:hh\\:mm}"
             : "No time parsed";
+        var parsedDateInfo = parseResult.TaskDate.HasValue
+            ? $", Parsed date: {parseResult.TaskDate.Value:M/d}"
+            : "";
         await AuditService.LogAsync(
             CurrentUserId,
             AuditActions.CreateAttempt,
             taskTitle: parseResult.CleanedTitle,
             rawInput: NewTaskText,
             source: "AddTask",
-            details: $"Time input: {NewTaskTimeText}, {parsedTimeInfo}");
+            details: $"Time input: {NewTaskTimeText}, {parsedTimeInfo}{parsedDateInfo}");
 
         // If weekly recurrence with specific days, set task date to next occurrence of first day
         if (parseResult.RecurrenceType == RecurrenceType.Weekly && parseResult.RecurrenceDays?.Count > 0)
