@@ -128,6 +128,63 @@ public class TaskService : ITaskService
         return await _taskRepository.CleanupIncompleteRecurringTasksAsync(userId);
     }
 
+    public async Task<int> ReprocessTasksWithRelativeDatesAsync(int userId)
+    {
+        // Get all incomplete tasks for the user
+        var allTasks = await _taskRepository.SearchAllTasksAsync(userId, 1000);
+        var tasksToFix = allTasks.Where(t => !t.IsCompleted && HasRelativeDateInTitle(t.Title)).ToList();
+
+        int fixedCount = 0;
+        foreach (var task in tasksToFix)
+        {
+            var parseResult = TaskTimeParser.ParseWithRecurrence(task.Title);
+
+            bool needsUpdate = false;
+
+            // Fix title if it contains relative date words
+            if (parseResult.CleanedTitle != task.Title)
+            {
+                task.Title = parseResult.CleanedTitle;
+                needsUpdate = true;
+            }
+
+            // Fix date if parsed date is different
+            if (parseResult.TaskDate.HasValue && parseResult.TaskDate.Value.Date != task.TaskDate.Date)
+            {
+                task.TaskDate = parseResult.TaskDate.Value;
+                needsUpdate = true;
+            }
+
+            // Fix time if parsed time is different
+            if (parseResult.ScheduledTime.HasValue && parseResult.ScheduledTime != task.ScheduledTime)
+            {
+                task.ScheduledTime = parseResult.ScheduledTime;
+                task.IsAllDay = false;
+                needsUpdate = true;
+            }
+
+            if (needsUpdate)
+            {
+                await _taskRepository.UpdateAsync(task);
+                fixedCount++;
+            }
+        }
+
+        return fixedCount;
+    }
+
+    private static bool HasRelativeDateInTitle(string title)
+    {
+        var lower = title.ToLowerInvariant();
+        return lower.Contains("tomorrow") ||
+               lower.Contains("today") ||
+               lower.Contains("tonight") ||
+               lower.Contains("next week") ||
+               lower.Contains("next month") ||
+               lower.Contains("day after tomorrow") ||
+               System.Text.RegularExpressions.Regex.IsMatch(lower, @"\b(next|on|this)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b");
+    }
+
     // Participant management
     public async Task<List<Participant>> GetAllParticipantsAsync()
     {

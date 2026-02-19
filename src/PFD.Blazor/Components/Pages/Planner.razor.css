@@ -188,20 +188,20 @@
 }
 
 .theme-pinkish {
-    --frame-bg: #F48FB1;
-    --frame-border: #F06292;
-    --calendar-bg: #FADDE1;
-    --calendar-header-bg: #F8BBD9;
-    --calendar-day-bg: #FFF0F5;
-    --calendar-selected: #FFCDD2;
-    --task-list-bg: #FFF5F8;
-    --task-header-bg: #FADDE1;
-    --task-row-bg: #FFFAFB;
-    --task-row-completed: #E8F5E9;
-    --text-primary: #AD1457;
+    --frame-bg: #F8BBD9;
+    --frame-border: #F48FB1;
+    --calendar-bg: #FFF0F5;
+    --calendar-header-bg: #FCE4EC;
+    --calendar-day-bg: #FFF5F8;
+    --calendar-selected: #FFE4E9;
+    --task-list-bg: #FFFAFB;
+    --task-header-bg: #FFF0F5;
+    --task-row-bg: #FFFFFF;
+    --task-row-completed: #F1F8E9;
+    --text-primary: #C2185B;
     --text-light: #FFFFFF;
-    --button-bg: #F48FB1;
-    --button-hover: #F8BBD9;
+    --button-bg: #F8BBD9;
+    --button-hover: #FCE4EC;
 }
 
 .theme-ughly {

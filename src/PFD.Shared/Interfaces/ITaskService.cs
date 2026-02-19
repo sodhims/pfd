@@ -26,6 +26,7 @@ public interface ITaskService
     Task<DailyTask?> MoveWaitingToTasksAsync(int taskId, int userId);
     Task<List<DailyTask>> GetLongQueueTasksAsync(int userId, int daysThreshold = 2);
     Task<int> CleanupIncompleteRecurringTasksAsync(int userId);
+    Task<int> ReprocessTasksWithRelativeDatesAsync(int userId);
 
     // Participant management
     Task<List<Participant>> GetAllParticipantsAsync();

@@ -316,6 +316,17 @@ public class ApiController : ControllerBase
         return Ok(count);
     }
 
+    /// <summary>
+    /// Reprocess tasks that have relative dates (tomorrow, today, next week, etc.) in their titles.
+    /// Cleans up the title and fixes the task date.
+    /// </summary>
+    [HttpPost("tasks/{userId}/reprocess-dates")]
+    public async Task<IActionResult> ReprocessTasksWithRelativeDates(int userId)
+    {
+        var count = await _taskService.ReprocessTasksWithRelativeDatesAsync(userId);
+        return Ok(new { success = true, fixedCount = count, message = $"Fixed {count} task(s) with relative dates in title" });
+    }
+
     // ==================== VOICE-TO-TASK (VoicePal Integration) ====================
 
     /// <summary>
